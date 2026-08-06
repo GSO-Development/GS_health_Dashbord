@@ -204,8 +204,8 @@ const TotalRangeFyPage = () => {
                             )}
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.division}</span>
                             {hasSubGroups && (
-                              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '0.1rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-color)', marginLeft: 'auto', flexShrink: 0 }}>
-                                {row.sales_groups.length} {row.sales_groups.length === 1 ? 'group' : 'groups'}
+                              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
+                                {row.sales_groups.length}G
                               </span>
                             )}
                           </div>

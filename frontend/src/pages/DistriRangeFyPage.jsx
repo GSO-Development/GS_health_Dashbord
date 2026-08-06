@@ -187,7 +187,7 @@ const DistriRangeFyPage = () => {
                   </td>
                 </tr>
               ) : (
-                filteredTree.map((div) => {
+                filteredTree.map((div, divIdx) => {
                   const isDivExpanded = Boolean(expandedDivisions[div.division_name] || searchTerm.trim());
 
                   return (
@@ -197,13 +197,13 @@ const DistriRangeFyPage = () => {
                         onClick={() => toggleDivision(div.division_name)}
                         style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-hover)', cursor: 'pointer', fontWeight: 800 }}
                       >
-                        <td className="sticky-cell-1" style={{ padding: '0.6rem 0.75rem', color: 'var(--gsh-red)', fontWeight: 800 }}>{div.no}</td>
+                        <td className="sticky-cell-1" style={{ padding: '0.6rem 0.5rem', color: 'var(--gsh-red)', fontWeight: 800, textAlign: 'center' }}>{div.no || divIdx + 1}</td>
                         <td className="sticky-cell-2" style={{ padding: '0.6rem 0.75rem', color: 'var(--text-main)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
                             {isDivExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />}
                             <span style={{ fontSize: '0.85rem', color: 'var(--gsh-teal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{div.division_name}</span>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-subtle)', background: 'var(--bg-card)', padding: '0.1rem 0.35rem', borderRadius: '4px', marginLeft: 'auto', flexShrink: 0 }}>
-                              {div.subgroups?.length || 0} Subgroups
+                            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
+                              {div.subgroups?.length || 0}G
                             </span>
                           </div>
                         </td>
