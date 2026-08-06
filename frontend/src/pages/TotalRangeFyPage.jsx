@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import ReactDOM from 'react-dom';
 import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
@@ -21,9 +20,6 @@ const TotalRangeFyPage = () => {
 
   // Level 2 Expand: Sales Groups (Click to view Product SKUs dropdown aligned directly with headers)
   const [expandedSg, setExpandedSg] = useState(new Set());
-
-  // Hover Tooltip: Quick Preview
-  const [hoveredSg, setHoveredSg] = useState(null);
 
   const navigate = useNavigate();
 
@@ -251,25 +247,13 @@ const TotalRangeFyPage = () => {
                               <tr style={{ borderBottom: '1px solid var(--border-color)', background: isSgOpen ? '#f0fdfa' : '#f8fafc', fontSize: '0.78rem' }}>
                                 <td className="sticky-cell-1" style={{ padding: '0.4rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>↳</td>
                                 
-                                {/* SALES GROUP BADGE WITH CLICK TO DROPDOWN + HOVER TOOLTIP */}
+                                {/* SALES GROUP BADGE WITH CLICK TO DROPDOWN */}
                                 <td className="sticky-cell-2" style={{ padding: '0.45rem 0.75rem 0.45rem 1rem', color: 'var(--text-main)', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>
                                   <span 
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       toggleSgExpand(sgKey);
                                     }}
-                                    onMouseEnter={(e) => {
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      setHoveredSg({
-                                        name: sg.sales_group,
-                                        products: sg.products || [],
-                                        count: sg.products_count || (sg.products ? sg.products.length : 0),
-                                        top: rect.bottom + window.scrollY + 6,
-                                        left: Math.min(rect.left + window.scrollX, window.innerWidth - 420)
-                                      });
-                                    }}
-                                    onMouseLeave={() => setHoveredSg(null)}
-                                    title="Click to toggle Product SKUs dropdown, or hover to preview"
                                     style={{ 
                                       fontWeight: 800, 
                                       color: isSgOpen ? '#fff' : 'var(--gsh-teal)', 
@@ -401,71 +385,6 @@ const TotalRangeFyPage = () => {
           </table>
         </div>
       </div>
-
-      {/* ─── HOVER TOOLTIP FLOATING CARD (PORTAL DIRECTLY TO BODY) ─── */}
-      {hoveredSg && ReactDOM.createPortal(
-        <div
-          style={{
-            position: 'absolute',
-            top: `${hoveredSg.top}px`,
-            left: `${hoveredSg.left}px`,
-            zIndex: 999999,
-            width: '390px',
-            background: 'var(--bg-card)',
-            border: '1.5px solid var(--gsh-teal)',
-            borderRadius: 'var(--radius-sm)',
-            boxShadow: '0 15px 35px rgba(0,0,0,0.35)',
-            padding: '0.85rem',
-            pointerEvents: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.6rem',
-            animation: 'fadeIn 0.15s ease'
-          }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.4rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 800, fontSize: '0.85rem', color: 'var(--gsh-teal)' }}>
-              <Package style={{ width: '16px', height: '16px' }} />
-              Sales Group: {hoveredSg.name}
-            </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, background: 'rgba(0,168,150,0.12)', color: 'var(--gsh-teal)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
-              {hoveredSg.count} {hoveredSg.count === 1 ? 'Product' : 'Products / SKUs'}
-            </span>
-          </div>
-
-          {/* Product Items Table */}
-          {hoveredSg.products && hoveredSg.products.length > 0 ? (
-            <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ background: 'var(--bg-hover)', color: 'var(--text-subtle)', fontWeight: 800, borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '0.3rem 0.4rem', width: '80px' }}>Part No</th>
-                    <th style={{ padding: '0.3rem 0.4rem' }}>Product Name (SKU)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {hoveredSg.products.map((p, pIdx) => (
-                    <tr key={pIdx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '0.3rem 0.4rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>
-                        {p.part_no}
-                      </td>
-                      <td style={{ padding: '0.3rem 0.4rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                        {p.product_sku}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0.5rem', textAlign: 'center' }}>
-              No product SKUs recorded for this Sales Group.
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
 
     </div>
   );
