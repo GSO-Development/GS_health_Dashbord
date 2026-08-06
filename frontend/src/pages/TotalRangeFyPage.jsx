@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box } from 'lucide-react';
+import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
 import api from '../services/api';
@@ -14,6 +14,9 @@ const TotalRangeFyPage = () => {
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+
+  // Toggle hide/show Division column for maximum mobile screen width
+  const [isDivisionHidden, setIsDivisionHidden] = useState(false);
 
   // Level 1 Expand: Division Ranges
   const [expandedRows, setExpandedRows] = useState(new Set());
@@ -130,7 +133,7 @@ const TotalRangeFyPage = () => {
             <thead style={{ position: 'sticky', top: 0, zIndex: 11, background: 'var(--bg-card)' }}>
               {/* Grouped Super Header Row */}
               <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase' }}>
-                <th colSpan="2" className="sticky-col-super" style={{ padding: '0.65rem 0.85rem' }}>Division</th>
+                <th colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Division</th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
                   TOTAL - CURRENT MONTH DETAILS ({selectedMonth.toUpperCase()})
                 </th>
@@ -143,8 +146,45 @@ const TotalRangeFyPage = () => {
               </tr>
               {/* Sub-Header Row */}
               <tr style={{ background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-subtle)' }}>
-                <th className="sticky-col-1" style={{ padding: '0.55rem 0.75rem' }}>No</th>
-                <th className="sticky-col-2" style={{ padding: '0.55rem 0.75rem' }}>Division</th>
+                <th className="sticky-col-1" style={{ padding: '0.55rem 0.15rem', textAlign: 'center' }}>
+                  {isDivisionHidden ? (
+                    <button
+                      onClick={() => setIsDivisionHidden(false)}
+                      title="Show Division Name Column"
+                      style={{ background: 'var(--gsh-teal)', color: '#fff', border: 'none', borderRadius: '3px', padding: '0.15rem 0.25rem', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center' }}
+                    >
+                      <Eye style={{ width: '11px', height: '11px' }} />
+                    </button>
+                  ) : 'No'}
+                </th>
+                {!isDivisionHidden && (
+                  <th className="sticky-col-2" style={{ padding: '0.55rem 0.4rem', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', width: '100%' }}>
+                      <span style={{ fontWeight: 800, color: 'var(--text-subtle)' }}>Division</span>
+                      <button
+                        onClick={() => setIsDivisionHidden(true)}
+                        title="Hide Division Name Column for full screen numeric view"
+                        style={{
+                          position: 'absolute', right: 0,
+                          background: 'rgba(200, 16, 46, 0.08)',
+                          color: 'var(--gsh-red)',
+                          border: '1px solid rgba(200, 16, 46, 0.25)',
+                          borderRadius: '4px',
+                          padding: '0.1rem 0.35rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.2rem',
+                          fontSize: '0.65rem',
+                          fontWeight: 800
+                        }}
+                      >
+                        <EyeOff style={{ width: '11px', height: '11px' }} />
+                        <span>Hide</span>
+                      </button>
+                    </div>
+                  </th>
+                )}
                 <th style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>MONTHLY-BUDGET</th>
                 <th style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>MONTHLY-ACTUAL</th>
                 <th style={{ padding: '0.55rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>CUR - %</th>
@@ -159,13 +199,13 @@ const TotalRangeFyPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="11" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isDivisionHidden ? 10 : 11} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading dynamic Division Range FY data...
                   </td>
                 </tr>
               ) : reportData.length === 0 ? (
                 <tr>
-                  <td colSpan="11" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isDivisionHidden ? 10 : 11} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No division ranges found matching "{searchTerm}".
                   </td>
                 </tr>
@@ -186,22 +226,24 @@ const TotalRangeFyPage = () => {
                           transition: 'background 0.15s ease'
                         }}
                       >
-                        <td className="sticky-cell-1" style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--gsh-red)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)' }}>{row.no}</td>
-                        <td className="sticky-cell-2" style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: 'var(--text-main)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
-                            {hasSubGroups ? (
-                              isExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />
-                            ) : (
-                              <span style={{ width: '16px', flexShrink: 0 }}></span>
-                            )}
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.division}</span>
-                            {hasSubGroups && (
-                              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
-                                {row.sales_groups.length}G
-                              </span>
-                            )}
-                          </div>
-                        </td>
+                        <td className="sticky-cell-1" style={{ padding: '0.55rem 0.15rem', fontWeight: 700, color: 'var(--gsh-red)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)', textAlign: 'center' }}>{row.no}</td>
+                        {!isDivisionHidden && (
+                          <td className="sticky-cell-2" style={{ padding: '0.55rem 0.5rem', fontWeight: 800, color: 'var(--text-main)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                              {hasSubGroups ? (
+                                isExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />
+                              ) : (
+                                <span style={{ width: '16px', flexShrink: 0 }}></span>
+                              )}
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.division}</span>
+                              {hasSubGroups && (
+                                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
+                                  {row.sales_groups.length}G
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        )}
                         
                         {/* Monthly Details */}
                         <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{fmt(row.m_budget)}</td>
@@ -241,44 +283,46 @@ const TotalRangeFyPage = () => {
                           return (
                             <React.Fragment key={sgIdx}>
                               <tr style={{ borderBottom: '1px solid var(--border-color)', background: isSgOpen ? '#f0fdfa' : '#f8fafc', fontSize: '0.78rem' }}>
-                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>↳</td>
+                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>↳</td>
                                 
                                 {/* SALES GROUP BADGE WITH CLICK TO DROPDOWN */}
-                                <td className="sticky-cell-2" style={{ padding: '0.45rem 0.75rem 0.45rem 1rem', color: 'var(--text-main)', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>
-                                  <span 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleSgExpand(sgKey);
-                                    }}
-                                    style={{ 
-                                      fontWeight: 800, 
-                                      color: isSgOpen ? '#fff' : 'var(--gsh-teal)', 
-                                      background: isSgOpen ? 'var(--gsh-teal)' : 'rgba(0,168,150,0.12)', 
-                                      padding: '0.25rem 0.6rem', 
-                                      borderRadius: '4px', 
-                                      border: '1px solid var(--gsh-teal)',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem',
-                                      boxShadow: '0 2px 6px rgba(0,168,150,0.15)',
-                                      transition: 'all 0.15s ease',
-                                      maxWidth: '100%'
-                                    }}
-                                  >
-                                    {hasProducts ? (
-                                      isSgOpen ? <ChevronDown style={{ width: '13px', height: '13px', flexShrink: 0 }} /> : <ChevronRight style={{ width: '13px', height: '13px', flexShrink: 0 }} />
-                                    ) : (
-                                      <Package style={{ width: '13px', height: '13px', flexShrink: 0 }} />
-                                    )}
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sg.sales_group}</span>
-                                    {sg.products_count > 0 && (
-                                      <span style={{ fontSize: '0.68rem', fontWeight: 800, background: isSgOpen ? '#fff' : 'var(--gsh-teal)', color: isSgOpen ? 'var(--gsh-teal)' : '#fff', padding: '0.05rem 0.35rem', borderRadius: '10px', marginLeft: '0.2rem', flexShrink: 0 }}>
-                                        {sg.products_count} {isSgOpen ? 'Open' : 'SKUs'}
-                                      </span>
-                                    )}
-                                  </span>
-                                </td>
+                                {!isDivisionHidden && (
+                                  <td className="sticky-cell-2" style={{ padding: '0.45rem 0.5rem', color: 'var(--text-main)', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>
+                                    <span 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleSgExpand(sgKey);
+                                      }}
+                                      style={{ 
+                                        fontWeight: 800, 
+                                        color: isSgOpen ? '#fff' : 'var(--gsh-teal)', 
+                                        background: isSgOpen ? 'var(--gsh-teal)' : 'rgba(0,168,150,0.12)', 
+                                        padding: '0.25rem 0.6rem', 
+                                        borderRadius: '4px', 
+                                        border: '1px solid var(--gsh-teal)',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.35rem',
+                                        boxShadow: '0 2px 6px rgba(0,168,150,0.15)',
+                                        transition: 'all 0.15s ease',
+                                        maxWidth: '100%'
+                                      }}
+                                    >
+                                      {hasProducts ? (
+                                        isSgOpen ? <ChevronDown style={{ width: '13px', height: '13px', flexShrink: 0 }} /> : <ChevronRight style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                                      ) : (
+                                        <Package style={{ width: '13px', height: '13px', flexShrink: 0 }} />
+                                      )}
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sg.sales_group}</span>
+                                      {sg.products_count > 0 && (
+                                        <span style={{ fontSize: '0.68rem', fontWeight: 800, background: isSgOpen ? '#fff' : 'var(--gsh-teal)', color: isSgOpen ? 'var(--gsh-teal)' : '#fff', padding: '0.05rem 0.35rem', borderRadius: '10px', marginLeft: '0.2rem', flexShrink: 0 }}>
+                                          {sg.products_count} {isSgOpen ? 'Open' : 'SKUs'}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </td>
+                                )}
 
                                 <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(sg.m_budget)}</td>
                                 <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{fmt(sg.m_actual)}</td>
@@ -310,21 +354,23 @@ const TotalRangeFyPage = () => {
                                       fontSize: '0.75rem' 
                                     }}
                                   >
-                                    <td className="sticky-cell-1" style={{ padding: '0.35rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', fontSize: '0.7rem', background: 'var(--bg-card)' }}>
-                                      ↳ ↳
+                                    <td className="sticky-cell-1" style={{ padding: '0.35rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', fontSize: '0.7rem', background: 'var(--bg-card)' }}>
+                                      ↳
                                     </td>
 
                                     {/* Product SKU Name + Part No Badge */}
-                                    <td className="sticky-cell-2" style={{ padding: '0.35rem 0.75rem 0.35rem 1.2rem', background: 'var(--bg-card)' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
-                                        <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)', background: 'rgba(200,16,46,0.08)', padding: '0.1rem 0.35rem', borderRadius: '3px', border: '1px solid rgba(200,16,46,0.2)', fontSize: '0.7rem', flexShrink: 0 }}>
-                                          {p.part_no}
-                                        </span>
-                                        <span style={{ fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {p.product_sku}
-                                        </span>
-                                      </div>
-                                    </td>
+                                    {!isDivisionHidden && (
+                                      <td className="sticky-cell-2" style={{ padding: '0.35rem 0.5rem', background: 'var(--bg-card)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                                          <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)', background: 'rgba(200,16,46,0.08)', padding: '0.1rem 0.35rem', borderRadius: '3px', border: '1px solid rgba(200,16,46,0.2)', fontSize: '0.7rem', flexShrink: 0 }}>
+                                            {p.part_no}
+                                          </span>
+                                          <span style={{ fontWeight: 600, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {p.product_sku}
+                                          </span>
+                                        </div>
+                                      </td>
+                                    )}
 
                                     {/* Product Monthly Figures */}
                                     <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(p.m_budget)}</td>
@@ -365,7 +411,7 @@ const TotalRangeFyPage = () => {
             {summaryTotals && (
               <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 20, background: 'var(--bg-card)', borderTop: '2.5px solid var(--gsh-red)', fontWeight: 800, fontSize: '0.85rem', boxShadow: '0 -6px 20px rgba(0,0,0,0.15)' }}>
                 <tr>
-                  <td colSpan="2" className="sticky-col-super" style={{ padding: '0.75rem', color: 'var(--gsh-red)' }}>GRAND TOTAL SUMMARY</td>
+                  <td colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.75rem 0.5rem', color: 'var(--gsh-red)' }}>GRAND TOTAL SUMMARY</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{fmt(summaryTotals.m_budget)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', color: '#10b981', background: 'var(--bg-card)' }}>{fmt(summaryTotals.m_actual)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)', color: '#10b981', background: 'var(--bg-card)' }}>{summaryTotals.cur_pct}%</td>

@@ -513,14 +513,14 @@ body {
   left: 0 !important;
   z-index: 25 !important;
   background-color: var(--bg-card) !important;
-  width: 34px !important;
-  min-width: 34px !important;
-  max-width: 34px !important;
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
 }
 
 .sticky-col-2 {
   position: sticky !important;
-  left: 34px !important;
+  left: 28px !important;
   z-index: 25 !important;
   background-color: var(--bg-card) !important;
   border-right: 2px solid var(--border-color) !important;
@@ -534,15 +534,15 @@ body {
   left: 0 !important;
   z-index: 10 !important;
   background-color: var(--bg-card);
-  width: 34px !important;
-  min-width: 34px !important;
-  max-width: 34px !important;
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
   text-align: center !important;
 }
 
 .sticky-cell-2 {
   position: sticky !important;
-  left: 34px !important;
+  left: 28px !important;
   z-index: 10 !important;
   background-color: var(--bg-card);
   border-right: 2px solid var(--border-color) !important;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-react';
+import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
 import api from '../services/api';
 
@@ -12,6 +12,9 @@ const DistriRangeFyPage = () => {
   const [treeData, setTreeData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Toggle hide/show Division column for maximum mobile screen width
+  const [isDivisionHidden, setIsDivisionHidden] = useState(false);
 
   // State to track expanded Divisions & SubGroups
   const [expandedDivisions, setExpandedDivisions] = useState({});
@@ -131,7 +134,7 @@ const DistriRangeFyPage = () => {
             <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--bg-card)' }}>
               {/* Grouped Super Header Row */}
               <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase' }}>
-                <th colSpan="2" className="sticky-col-super" style={{ padding: '0.65rem 0.85rem' }}>Division</th>
+                <th colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Division</th>
                 <th colSpan="6" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(6, 182, 212, 0.08)', color: '#06b6d4' }}>
                   Division wise Sales Update - Current Month ({selectedMonth.toUpperCase()})
                 </th>
@@ -141,8 +144,45 @@ const DistriRangeFyPage = () => {
               </tr>
               {/* Sub-Header Row */}
               <tr style={{ background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontSize: '0.725rem', fontWeight: 800, color: 'var(--text-subtle)' }}>
-                <th className="sticky-col-1" style={{ padding: '0.5rem 0.75rem' }}>#</th>
-                <th className="sticky-col-2" style={{ padding: '0.5rem 0.75rem' }}>Division</th>
+                <th className="sticky-col-1" style={{ padding: '0.5rem 0.15rem', textAlign: 'center' }}>
+                  {isDivisionHidden ? (
+                    <button
+                      onClick={() => setIsDivisionHidden(false)}
+                      title="Show Division Name Column"
+                      style={{ background: 'var(--gsh-teal)', color: '#fff', border: 'none', borderRadius: '3px', padding: '0.15rem 0.25rem', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 800, display: 'inline-flex', alignItems: 'center' }}
+                    >
+                      <Eye style={{ width: '11px', height: '11px' }} />
+                    </button>
+                  ) : '#'}
+                </th>
+                {!isDivisionHidden && (
+                  <th className="sticky-col-2" style={{ padding: '0.5rem 0.4rem', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', width: '100%' }}>
+                      <span style={{ fontWeight: 800, color: 'var(--text-subtle)' }}>Division</span>
+                      <button
+                        onClick={() => setIsDivisionHidden(true)}
+                        title="Hide Division Name Column for full screen numeric view"
+                        style={{
+                          position: 'absolute', right: 0,
+                          background: 'rgba(200, 16, 46, 0.08)',
+                          color: 'var(--gsh-red)',
+                          border: '1px solid rgba(200, 16, 46, 0.25)',
+                          borderRadius: '4px',
+                          padding: '0.1rem 0.35rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.2rem',
+                          fontSize: '0.65rem',
+                          fontWeight: 800
+                        }}
+                      >
+                        <EyeOff style={{ width: '11px', height: '11px' }} />
+                        <span>Hide</span>
+                      </button>
+                    </div>
+                  </th>
+                )}
                 
                 {/* Current Month */}
                 <th style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>Primary-Target</th>
@@ -164,13 +204,13 @@ const DistriRangeFyPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="14" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isDivisionHidden ? 13 : 14} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading DISTRI-Range wise tree calculations...
                   </td>
                 </tr>
               ) : filteredTree.length === 0 ? (
                 <tr>
-                  <td colSpan="14" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isDivisionHidden ? 13 : 14} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No Divisions matching "{searchTerm}".
                   </td>
                 </tr>
@@ -185,16 +225,18 @@ const DistriRangeFyPage = () => {
                         onClick={() => toggleDivision(div.division_name)}
                         style={{ borderBottom: '1px solid var(--border-color)', background: isDivExpanded ? '#fef2f2' : 'var(--bg-card)', cursor: 'pointer', fontWeight: 800 }}
                       >
-                        <td className="sticky-cell-1" style={{ padding: '0.6rem 0.5rem', color: 'var(--gsh-red)', fontWeight: 800, textAlign: 'center', background: isDivExpanded ? '#fef2f2' : 'var(--bg-card)' }}>{div.no || divIdx + 1}</td>
-                        <td className="sticky-cell-2" style={{ padding: '0.6rem 0.75rem', color: 'var(--text-main)', background: isDivExpanded ? '#fef2f2' : 'var(--bg-card)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
-                            {isDivExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />}
-                            <span style={{ fontSize: '0.85rem', color: 'var(--gsh-teal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{div.division_name}</span>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
-                              {div.subgroups?.length || 0}G
-                            </span>
-                          </div>
-                        </td>
+                        <td className="sticky-cell-1" style={{ padding: '0.6rem 0.15rem', color: 'var(--gsh-red)', fontWeight: 800, textAlign: 'center', background: isDivExpanded ? '#fef2f2' : 'var(--bg-card)' }}>{div.no || divIdx + 1}</td>
+                        {!isDivisionHidden && (
+                          <td className="sticky-cell-2" style={{ padding: '0.6rem 0.5rem', color: 'var(--text-main)', background: isDivExpanded ? '#fef2f2' : 'var(--bg-card)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                              {isDivExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />}
+                              <span style={{ fontSize: '0.85rem', color: 'var(--gsh-teal)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{div.division_name}</span>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.25)', marginLeft: 'auto', flexShrink: 0 }}>
+                                {div.subgroups?.length || 0}G
+                              </span>
+                            </div>
+                          </td>
+                        )}
 
                         {/* Current Month */}
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{fmt(div.p_tgt)}</td>
@@ -243,16 +285,18 @@ const DistriRangeFyPage = () => {
                               }}
                               style={{ borderBottom: '1px solid var(--border-color)', background: isSubExpanded ? '#f0fdfa' : '#f8fafc', cursor: 'pointer', fontWeight: 700 }}
                             >
-                              <td className="sticky-cell-1" style={{ padding: '0.5rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', background: isSubExpanded ? '#f0fdfa' : '#f8fafc' }}>↳</td>
-                              <td className="sticky-cell-2" style={{ padding: '0.5rem 0.75rem 0.5rem 1rem', color: 'var(--text-main)', background: isSubExpanded ? '#f0fdfa' : '#f8fafc' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
-                                  {isSubExpanded ? <ChevronDown style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '14px', height: '14px', color: 'var(--text-subtle)', flexShrink: 0 }} />}
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.subgroup_name}</span>
-                                  <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-subtle)', flexShrink: 0 }}>
-                                    ({sub.items?.length || 0})
-                                  </span>
-                                </div>
-                              </td>
+                              <td className="sticky-cell-1" style={{ padding: '0.5rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', background: isSubExpanded ? '#f0fdfa' : '#f8fafc' }}>↳</td>
+                              {!isDivisionHidden && (
+                                <td className="sticky-cell-2" style={{ padding: '0.5rem 0.5rem', color: 'var(--text-main)', background: isSubExpanded ? '#f0fdfa' : '#f8fafc' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                                    {isSubExpanded ? <ChevronDown style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '14px', height: '14px', color: 'var(--text-subtle)', flexShrink: 0 }} />}
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.subgroup_name}</span>
+                                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-subtle)', flexShrink: 0 }}>
+                                      ({sub.items?.length || 0})
+                                    </span>
+                                  </div>
+                                </td>
+                              )}
 
                               {/* Current Month */}
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{fmt(sub.p_tgt)}</td>
@@ -282,13 +326,15 @@ const DistriRangeFyPage = () => {
                             {/* LEVEL 3: ITEM ROWS */}
                             {isSubExpanded && (sub.items || []).map((item, iIdx) => (
                               <tr key={`item_${subKey}_${item.part_no}_${iIdx}`} style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
-                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', fontSize: '0.7rem', background: 'var(--bg-card)' }}>•</td>
-                                <td className="sticky-cell-2" style={{ padding: '0.4rem 0.75rem 0.4rem 1.2rem', background: 'var(--bg-card)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
-                                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)', marginRight: '0.2rem', flexShrink: 0 }}>{item.part_no}</span>
-                                    <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_sku}</span>
-                                  </div>
-                                </td>
+                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', fontSize: '0.7rem', background: 'var(--bg-card)' }}>•</td>
+                                {!isDivisionHidden && (
+                                  <td className="sticky-cell-2" style={{ padding: '0.4rem 0.5rem', background: 'var(--bg-card)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
+                                      <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)', marginRight: '0.2rem', flexShrink: 0 }}>{item.part_no}</span>
+                                      <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_sku}</span>
+                                    </div>
+                                  </td>
+                                )}
 
                                 {/* Current Month */}
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{fmt(item.p_tgt)}</td>
@@ -328,7 +374,7 @@ const DistriRangeFyPage = () => {
             {grandTotal && (
               <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 20, background: 'var(--bg-card)', borderTop: '3px solid var(--gsh-red)', fontWeight: 800 }}>
                 <tr>
-                  <td colSpan="2" className="sticky-col-super" style={{ padding: '0.75rem', color: 'var(--gsh-red)', fontSize: '0.85rem' }}>
+                  <td colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.75rem 0.5rem', color: 'var(--gsh-red)', fontSize: '0.85rem' }}>
                     GRAND TOTAL SUMMARY
                   </td>
 
