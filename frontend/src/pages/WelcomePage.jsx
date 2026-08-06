@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Activity, TrendingUp, Award } from 'lucide-react';
+import { ShieldCheck, ArrowRight } from 'lucide-react';
 import GshLogo from '../components/GshLogo';
 
 const WelcomePage = () => {
@@ -8,34 +8,35 @@ const WelcomePage = () => {
 
   return (
     <div style={{
+      height: '100vh',
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #0b1e36 0%, #002b49 50%, #071527 100%)',
       color: '#ffffff',
       display: 'flex',
       flexDirection: 'column',
       fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-      overflowX: 'hidden'
+      overflowX: 'hidden',
+      overflowY: 'auto',
+      boxSizing: 'border-box'
     }}>
       {/* Top Corporate Navbar */}
       <header style={{
-        padding: '1.25rem 2.5rem',
+        padding: '0.85rem 1.75rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
         backdropFilter: 'blur(12px)',
         background: 'rgba(11, 30, 54, 0.85)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100
+        flexShrink: 0
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-          <GshLogo style={{ height: '42px', width: 'auto' }} />
-          <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.25)', paddingLeft: '0.85rem' }}>
-            <span style={{ fontSize: '1rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#ffffff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <GshLogo style={{ height: '36px', width: 'auto' }} />
+          <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.25)', paddingLeft: '0.75rem' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#ffffff', display: 'block' }}>
               George Steuart Health
             </span>
-            <span style={{ display: 'block', fontSize: '0.725rem', color: '#90caf9', fontWeight: 600, letterSpacing: '0.02em' }}>
+            <span style={{ display: 'block', fontSize: '0.675rem', color: '#90caf9', fontWeight: 600, letterSpacing: '0.02em' }}>
               Executive Analytics Portal
             </span>
           </div>
@@ -46,52 +47,54 @@ const WelcomePage = () => {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.65rem 1.5rem',
+            gap: '0.45rem',
+            padding: '0.55rem 1.25rem',
             background: 'linear-gradient(135deg, #c8102e 0%, #a00c24 100%)',
             border: 'none',
             borderRadius: '24px',
             color: '#ffffff',
             fontWeight: 700,
-            fontSize: '0.9rem',
+            fontSize: '0.85rem',
             cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(200, 16, 46, 0.45)',
-            transition: 'all 0.25s ease'
+            boxShadow: '0 4px 14px rgba(200, 16, 46, 0.4)',
+            transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 6px 22px rgba(200, 16, 46, 0.65)';
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 6px 18px rgba(200, 16, 46, 0.6)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 15px rgba(200, 16, 46, 0.45)';
+            e.currentTarget.style.boxShadow = '0 4px 14px rgba(200, 16, 46, 0.4)';
           }}
         >
-          Login to Dashboard
-          <ArrowRight style={{ width: '16px', height: '16px' }} />
+          Login
+          <ArrowRight style={{ width: '15px', height: '15px' }} />
         </button>
       </header>
 
-      {/* Main Hero Content (Cleaned without lower cards) */}
+      {/* Main Hero Content (Fits 100vh cleanly on desktop) */}
       <main style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '4rem 1.5rem',
+        padding: '1.5rem 1.25rem',
         textAlign: 'center',
-        position: 'relative'
+        position: 'relative',
+        boxSizing: 'border-box'
       }}>
         
         {/* Soft Background Radial Glow */}
         <div style={{
           position: 'absolute',
-          top: '35%',
+          top: '40%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: '600px',
-          height: '600px',
+          width: '500px',
+          height: '500px',
           background: 'radial-gradient(circle, rgba(144, 202, 249, 0.08) 0%, rgba(200, 16, 46, 0.04) 40%, rgba(0,0,0,0) 70%)',
           pointerEvents: 'none'
         }} />
@@ -100,29 +103,30 @@ const WelcomePage = () => {
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: '0.6rem',
-          padding: '0.45rem 1.25rem',
-          borderRadius: '24px',
+          gap: '0.5rem',
+          padding: '0.35rem 1rem',
+          borderRadius: '20px',
           background: 'rgba(255, 255, 255, 0.08)',
           border: '1px solid rgba(255, 255, 255, 0.18)',
           color: '#90caf9',
-          fontSize: '0.85rem',
+          fontSize: '0.775rem',
           fontWeight: 700,
-          marginBottom: '2rem',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+          marginBottom: '1.25rem',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          maxWidth: '90%'
         }}>
-          <ShieldCheck style={{ width: '18px', height: '18px', color: '#64b5f6' }} />
-          Enterprise Analytics & Financial Intelligence 2026/27
+          <ShieldCheck style={{ width: '16px', height: '16px', color: '#64b5f6', flexShrink: 0 }} />
+          <span>Enterprise Analytics & Financial Intelligence 2026/27</span>
         </div>
 
         {/* Hero Title */}
         <h1 style={{
-          fontSize: 'clamp(2.4rem, 5.5vw, 4.2rem)',
+          fontSize: 'clamp(1.75rem, 4.2vw, 3.2rem)',
           fontWeight: 900,
-          lineHeight: 1.12,
-          maxWidth: '920px',
-          margin: '0 0 1.5rem 0',
-          background: 'linear-gradient(180deg, #ffffff 0%, #e2e8f0 70%, #94a3b8 100%)',
+          lineHeight: 1.15,
+          maxWidth: '850px',
+          margin: '0 0 1rem 0',
+          background: 'linear-gradient(180deg, #ffffff 0%, #e2e8f0 75%, #94a3b8 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           letterSpacing: '-0.02em'
@@ -132,11 +136,11 @@ const WelcomePage = () => {
 
         {/* Description Text */}
         <p style={{
-          fontSize: '1.15rem',
+          fontSize: 'clamp(0.9rem, 1.8vw, 1.1rem)',
           color: '#cbd5e1',
-          maxWidth: '720px',
-          margin: '0 0 3rem 0',
-          lineHeight: 1.65,
+          maxWidth: '680px',
+          margin: '0 0 2rem 0',
+          lineHeight: 1.6,
           fontWeight: 400
         }}>
           Real-time tracking for Total Budget targets, Invoiced Sales Actuals, Distributor Performance, and Outstanding Order Backlog with Role-Based Access Control.
@@ -148,41 +152,42 @@ const WelcomePage = () => {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem',
-            padding: '1rem 2.6rem',
+            gap: '0.65rem',
+            padding: '0.85rem 2.2rem',
             background: 'linear-gradient(135deg, #c8102e 0%, #9b0a22 100%)',
             border: 'none',
-            borderRadius: '32px',
+            borderRadius: '30px',
             color: '#ffffff',
             fontWeight: 800,
-            fontSize: '1.1rem',
+            fontSize: '1rem',
             cursor: 'pointer',
-            boxShadow: '0 10px 30px rgba(200, 16, 46, 0.55)',
+            boxShadow: '0 8px 25px rgba(200, 16, 46, 0.5)',
             transition: 'all 0.25s ease'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
-            e.currentTarget.style.boxShadow = '0 14px 38px rgba(200, 16, 46, 0.7)';
+            e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+            e.currentTarget.style.boxShadow = '0 12px 32px rgba(200, 16, 46, 0.65)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0) scale(1)';
-            e.currentTarget.style.boxShadow = '0 10px 30px rgba(200, 16, 46, 0.55)';
+            e.currentTarget.style.boxShadow = '0 8px 25px rgba(200, 16, 46, 0.5)';
           }}
         >
           Access Dashboard Portal
-          <ArrowRight style={{ width: '22px', height: '22px' }} />
+          <ArrowRight style={{ width: '20px', height: '20px' }} />
         </button>
       </main>
 
       {/* Corporate Footer */}
       <footer style={{
-        padding: '1.75rem 2rem',
+        padding: '0.85rem 1.5rem',
         borderTop: '1px solid rgba(255, 255, 255, 0.1)',
         textAlign: 'center',
-        fontSize: '0.85rem',
+        fontSize: '0.775rem',
         color: '#94a3b8',
         background: 'rgba(7, 21, 39, 0.95)',
-        letterSpacing: '0.01em'
+        letterSpacing: '0.01em',
+        flexShrink: 0
       }}>
         © 2026 George Steuart Health (Pvt) Ltd. All Rights Reserved. Executive Financial Dashboard System.
       </footer>
