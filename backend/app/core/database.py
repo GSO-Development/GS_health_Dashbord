@@ -144,6 +144,114 @@ def init_db():
                     INDEX idx_planned_delivery_date (planned_delivery_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            # 3. Table for Total Budget
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS total_budget (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    s_no INT,
+                    cost_center VARCHAR(100),
+                    sales_group VARCHAR(100),
+                    range_name VARCHAR(100),
+                    part_no VARCHAR(100),
+                    product_sku VARCHAR(255),
+                    pack VARCHAR(100),
+                    april DOUBLE DEFAULT 0,
+                    may DOUBLE DEFAULT 0,
+                    june DOUBLE DEFAULT 0,
+                    july DOUBLE DEFAULT 0,
+                    august DOUBLE DEFAULT 0,
+                    september DOUBLE DEFAULT 0,
+                    october DOUBLE DEFAULT 0,
+                    november DOUBLE DEFAULT 0,
+                    december DOUBLE DEFAULT 0,
+                    january DOUBLE DEFAULT 0,
+                    february DOUBLE DEFAULT 0,
+                    march DOUBLE DEFAULT 0,
+                    total DOUBLE DEFAULT 0,
+                    INDEX idx_cost_center (cost_center),
+                    INDEX idx_sales_group (sales_group),
+                    INDEX idx_product_sku (product_sku)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 4. Table for Dis Budget
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS dis_budget (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    month DATETIME,
+                    product_id VARCHAR(100),
+                    product VARCHAR(255),
+                    division_name VARCHAR(100),
+                    primary_target DOUBLE DEFAULT 0,
+                    primary_actual DOUBLE DEFAULT 0,
+                    rd_target DOUBLE DEFAULT 0,
+                    rd_actual DOUBLE DEFAULT 0,
+                    pri_pct DOUBLE DEFAULT 0,
+                    rd_pct DOUBLE DEFAULT 0,
+                    qtr VARCHAR(50),
+                    INDEX idx_product_id (product_id),
+                    INDEX idx_division_name (division_name),
+                    INDEX idx_qtr (qtr)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 5. Table for Axienta Data
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS axienta_data (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    entry_date DATE NOT NULL,
+                    product_id VARCHAR(100),
+                    product VARCHAR(255),
+                    qty DOUBLE DEFAULT 0,
+                    value DOUBLE DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_entry_date (entry_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 6. Table for Users
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    full_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    role VARCHAR(20) NOT NULL DEFAULT 'user',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 7. Table for Division Mappings
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS division_mappings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    sales_group VARCHAR(150) NOT NULL,
+                    range_name VARCHAR(150) NOT NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_sales_group (sales_group, range_name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 8. Table for Custom Dashboard Charts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS custom_dashboard_charts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    chart_id VARCHAR(80) NOT NULL UNIQUE,
+                    chart_title VARCHAR(200) NOT NULL,
+                    chart_type VARCHAR(40) NOT NULL DEFAULT 'horizontal_bar',
+                    target_formula TEXT,
+                    actual_formula TEXT,
+                    grid_row INT DEFAULT 0,
+                    grid_col INT DEFAULT 0,
+                    grid_span_cols INT DEFAULT 1,
+                    grid_span_rows INT DEFAULT 1,
+                    color_actual VARCHAR(20) DEFAULT '#10b981',
+                    color_target VARCHAR(20) DEFAULT '#c8102e',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
     finally:
         conn.close()
 
@@ -158,6 +266,9 @@ def clear_database(conn=None):
         with conn.cursor() as cursor:
             cursor.execute("TRUNCATE TABLE invoice_output;")
             cursor.execute("TRUNCATE TABLE outstanding_output;")
+            cursor.execute("TRUNCATE TABLE total_budget;")
+            cursor.execute("TRUNCATE TABLE dis_budget;")
+            cursor.execute("TRUNCATE TABLE axienta_data;")
     finally:
         if close_conn:
             conn.close()
