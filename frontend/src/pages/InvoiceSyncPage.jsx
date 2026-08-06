@@ -7,8 +7,9 @@ const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, 
 const InvoiceSyncPage = () => {
   const [data, setData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -31,6 +32,7 @@ const InvoiceSyncPage = () => {
       if (resData.data && resData.data.data) {
         setData(resData.data.data);
         setTotalCount(resData.data.total || resData.data.data.length);
+        setHasSynced(true);
       }
       if (resStatus.data) {
         setSyncStatus(resStatus.data);
@@ -41,10 +43,6 @@ const InvoiceSyncPage = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    loadInvoiceData();
-  }, [searchTerm]);
-
   const handleTriggerInvoiceSync = async () => {
     setSyncing(true);
     try {
@@ -52,7 +50,7 @@ const InvoiceSyncPage = () => {
       const res = await api.post('/oracle-sync/sync-invoices');
       if (res.data) {
         showToast(res.data.message || '✅ Invoice Sync Complete!');
-        loadInvoiceData();
+        await loadInvoiceData();
       }
     } catch {
       showToast('Failed to execute Oracle invoice sync query.', 'error');
@@ -186,7 +184,19 @@ const InvoiceSyncPage = () => {
               {loading ? (
                 <tr>
                   <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading live invoice_output records...
+                    Connecting to Oracle IFS & loading synced records...
+                  </td>
+                </tr>
+              ) : !hasSynced ? (
+                <tr>
+                  <td colSpan="8" style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <Server style={{ width: '40px', height: '40px', color: 'var(--gsh-red)', opacity: 0.6 }} />
+                      <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>No Oracle Invoice Data Loaded</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        Click <strong style={{ color: 'var(--gsh-red)' }}>'Execute Oracle Invoice Query Sync'</strong> above to fetch live data from Oracle IFS.
+                      </span>
+                    </div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (

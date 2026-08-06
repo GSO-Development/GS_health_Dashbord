@@ -7,8 +7,9 @@ const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, 
 const OutstandingSyncPage = () => {
   const [data, setData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -27,16 +28,13 @@ const OutstandingSyncPage = () => {
       if (res.data && res.data.data) {
         setData(res.data.data);
         setTotalCount(res.data.total || res.data.data.length);
+        setHasSynced(true);
       }
     } catch {
       showToast('Failed to load outstanding backlog records.', 'error');
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    loadOutstandingData();
-  }, [searchTerm]);
 
   const handleTriggerOutstandingSync = async () => {
     setSyncing(true);
@@ -45,7 +43,7 @@ const OutstandingSyncPage = () => {
       const res = await api.post('/oracle-sync/sync-outstanding');
       if (res.data) {
         showToast(res.data.message || '✅ Outstanding Backlog Sync Complete!');
-        loadOutstandingData();
+        await loadOutstandingData();
       }
     } catch {
       showToast('Failed to execute Oracle outstanding backlog sync query.', 'error');
@@ -179,7 +177,19 @@ const OutstandingSyncPage = () => {
               {loading ? (
                 <tr>
                   <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading live outstanding_output backlog records...
+                    Connecting to Oracle IFS & loading synced records...
+                  </td>
+                </tr>
+              ) : !hasSynced ? (
+                <tr>
+                  <td colSpan="8" style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                      <Server style={{ width: '40px', height: '40px', color: 'var(--gsh-teal)', opacity: 0.6 }} />
+                      <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>No Oracle Outstanding Data Loaded</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        Click <strong style={{ color: 'var(--gsh-teal)' }}>'Execute Oracle Outstanding Query Sync'</strong> above to fetch live data from Oracle IFS.
+                      </span>
+                    </div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
