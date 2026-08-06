@@ -88,10 +88,6 @@ const OutstandingSyncPage = () => {
             Read-only live connection to Oracle Database (172.16.7.45) executing <code style={{ background: 'var(--bg-hover)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>ifsapp.gsh_order_report@IFS_PROD_IFSAPP</code>.
           </p>
         </div>
-
-        <button onClick={loadOutstandingData} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}>
-          <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh
-        </button>
       </div>
 
       {/* Oracle Connection & Sync Trigger Card */}
