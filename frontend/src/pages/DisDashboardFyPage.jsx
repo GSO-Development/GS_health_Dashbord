@@ -128,16 +128,16 @@ const DisDashboardFyPage = () => {
         onSelectDate={setSelectedDate}
       />
 
-      {/* 3-Column Dashboard Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', alignItems: 'stretch' }}>
+      {/* 3-Column Responsive Dashboard Layout */}
+      <div className="dashboard-cards-grid">
         
         {/* CARD 1: Primary Sales Details (Top Left) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
           <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
             Primary Sales Details ({data?.month_label || 'July 2026'})
           </h3>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flex: 1 }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="gauge-card-content">
+            <div className="gauge-card-bars">
               {/* Pri:Act */}
               <div>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -159,7 +159,9 @@ const DisDashboardFyPage = () => {
                 </div>
               </div>
             </div>
-            <CircularGauge percentage={pri.pct || 0} variance={`${fmtMn(pri.variance)}`} size={110} activeColor="#06b6d4" />
+            <div style={{ flexShrink: 0 }}>
+              <CircularGauge percentage={pri.pct || 0} variance={`${fmtMn(pri.variance)}`} size={110} activeColor="#06b6d4" />
+            </div>
           </div>
         </div>
 
@@ -168,8 +170,8 @@ const DisDashboardFyPage = () => {
           <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
             RD Sales Details ({data?.month_label || 'July 2026'})
           </h3>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flex: 1 }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="gauge-card-content">
+            <div className="gauge-card-bars">
               {/* RD:Act */}
               <div>
                 <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -191,12 +193,14 @@ const DisDashboardFyPage = () => {
                 </div>
               </div>
             </div>
-            <CircularGauge percentage={rd.pct || 0} variance={`${fmtMn(rd.variance)}`} size={110} activeColor={rd.pct >= 100 ? '#10b981' : '#f59e0b'} />
+            <div style={{ flexShrink: 0 }}>
+              <CircularGauge percentage={rd.pct || 0} variance={`${fmtMn(rd.variance)}`} size={110} activeColor={rd.pct >= 100 ? '#10b981' : '#f59e0b'} />
+            </div>
           </div>
         </div>
 
         {/* CARD 3: Distributor Total Budget vs Actual FY 27' (Tall Right Column) */}
-        <div className="glass-card" style={{ padding: '1.25rem', gridRow: 'span 2', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
+        <div className="glass-card dashboard-card-tall" style={{ padding: '1.25rem', gridRow: 'span 2', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
           <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1.25rem 0', textAlign: 'center' }}>
             Distributor Total Budget vs Actual FY 27'
           </h3>
