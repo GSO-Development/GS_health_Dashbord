@@ -230,31 +230,41 @@ def get_graph_app_token():
 
 @router.get("/microsoft/search-users")
 def search_microsoft_users(q: str = Query("")):
-    """Search Microsoft Graph API for organizational users by email/name"""
+    """Search Microsoft Graph API for organizational users by email/name using server-side $filter"""
     if not q or len(q.strip()) < 2:
         return {"users": []}
 
-    search_query = q.strip().lower()
+    search_query = q.strip()
 
     try:
         access_token = get_graph_app_token()
         if not access_token:
-            return {"users": [], "warning": "Failed to authenticate with Microsoft Graph API"}
+            return {"users": [], "error": "Failed to authenticate with Microsoft Graph API"}
 
-        # Attempt Graph API search with filter
-        graph_url = f"https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$top=25"
-        req = urllib.request.Request(graph_url, headers={"Authorization": f"Bearer {access_token}"})
-        
+        # Use $filter with startsWith for displayName and mail - server-side, fast search
+        encoded_q = urllib.parse.quote(search_query)
+        graph_url = (
+            f"https://graph.microsoft.com/v1.0/users"
+            f"?$select=id,displayName,mail,userPrincipalName"
+            f"&$filter=startsWith(displayName,'{search_query}') or startsWith(mail,'{search_query}') or startsWith(userPrincipalName,'{search_query}')"
+            f"&$top=15"
+            f"&$orderby=displayName"
+        )
+
+        req = urllib.request.Request(graph_url, headers={
+            "Authorization": f"Bearer {access_token}",
+            "ConsistencyLevel": "eventual"
+        })
+
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             all_users = data.get("value", [])
 
-        # Filter users matching query in mail, displayName, or userPrincipalName
         matched = []
         for u in all_users:
             mail = u.get("mail") or u.get("userPrincipalName") or ""
             name = u.get("displayName") or ""
-            if search_query in mail.lower() or search_query in name.lower():
+            if mail:  # Only include users with a valid email
                 matched.append({
                     "azure_oid": u.get("id"),
                     "displayName": name,
@@ -265,10 +275,29 @@ def search_microsoft_users(q: str = Query("")):
         return {"users": matched}
 
     except Exception as e:
-        print("Microsoft Graph User Search Error:", str(e))
-        # Return helpful warning if Graph API application permissions (User.Read.All) require Admin Consent in Azure portal
-        return {
-            "users": [],
-            "error_details": str(e),
-            "permission_required": "In Azure AD Portal, under App Registration -> API permissions, add 'User.Read.All' (Application) and click 'Grant admin consent'."
-        }
+        err_str = str(e)
+        print("Microsoft Graph User Search Error:", err_str)
+        # Fallback: fetch all and filter client-side (slower but works without ConsistencyLevel)
+        try:
+            access_token = get_graph_app_token()
+            graph_url = "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$top=100"
+            req = urllib.request.Request(graph_url, headers={"Authorization": f"Bearer {access_token}"})
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                all_users = data.get("value", [])
+            
+            q_lower = search_query.lower()
+            matched = []
+            for u in all_users:
+                mail = u.get("mail") or u.get("userPrincipalName") or ""
+                name = u.get("displayName") or ""
+                if (q_lower in name.lower() or q_lower in mail.lower()) and mail:
+                    matched.append({
+                        "azure_oid": u.get("id"),
+                        "displayName": name,
+                        "mail": mail,
+                        "userPrincipalName": u.get("userPrincipalName") or mail
+                    })
+            return {"users": matched}
+        except Exception as e2:
+            return {"users": [], "error": str(e2)}

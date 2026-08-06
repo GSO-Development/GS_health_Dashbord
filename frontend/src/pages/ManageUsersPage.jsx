@@ -25,16 +25,11 @@ const ManageUsersPage = () => {
     role: 'user'
   });
 
-  // Microsoft User Search & Direct Add State
+  // Microsoft User Search State
   const [msQuery, setMsQuery] = useState('');
   const [msSearching, setMsSearching] = useState(false);
   const [msSearchResults, setMsSearchResults] = useState([]);
-  const [msWarning, setMsWarning] = useState('');
   const [selectedMsUser, setSelectedMsUser] = useState(null);
-  
-  // Direct Microsoft User Manual Input State
-  const [directMsEmail, setDirectMsEmail] = useState('');
-  const [directMsName, setDirectMsName] = useState('');
   const [msRole, setMsRole] = useState('user');
 
   const showToast = (msg, type = 'success') => {
@@ -61,21 +56,16 @@ const ManageUsersPage = () => {
   useEffect(() => {
     if (!msQuery || msQuery.trim().length < 2) {
       setMsSearchResults([]);
-      setMsWarning('');
       return;
     }
 
     const timer = setTimeout(async () => {
       setMsSearching(true);
-      setMsWarning('');
       try {
         const res = await api.get('/auth/microsoft/search-users', {
           params: { q: msQuery }
         });
         setMsSearchResults(res.data.users || []);
-        if (res.data.permission_required) {
-          setMsWarning(res.data.permission_required);
-        }
       } catch (err) {
         console.warn('Graph API Search error:', err);
       }
@@ -120,28 +110,12 @@ const ManageUsersPage = () => {
     setSubmitting(false);
   };
 
-  // Submit Microsoft User (Either via Search or Direct Input)
+  // Submit Microsoft User (via Graph API search selection)
   const handleCreateMicrosoftUser = async (e) => {
     e.preventDefault();
 
-    let targetEmail = '';
-    let targetName = '';
-    let azureOid = null;
-
-    if (selectedMsUser) {
-      targetEmail = selectedMsUser.mail;
-      targetName = selectedMsUser.displayName;
-      azureOid = selectedMsUser.azure_oid;
-    } else if (directMsEmail) {
-      targetEmail = directMsEmail.trim();
-      targetName = directMsName.trim() || targetEmail.split('@')[0];
-    } else {
-      showToast('Please select a Microsoft user or enter a Microsoft Email address', 'error');
-      return;
-    }
-
-    if (!targetEmail || !targetEmail.includes('@')) {
-      showToast('Please enter a valid email address', 'error');
+    if (!selectedMsUser) {
+      showToast('Please search and select a Microsoft user', 'error');
       return;
     }
 
@@ -149,17 +123,15 @@ const ManageUsersPage = () => {
     try {
       const res = await api.post('/users', {
         account_type: 'microsoft',
-        email: targetEmail,
-        full_name: targetName,
-        username: targetEmail.split('@')[0].toLowerCase(),
-        azure_oid: azureOid,
+        email: selectedMsUser.mail,
+        full_name: selectedMsUser.displayName,
+        username: selectedMsUser.mail.split('@')[0].toLowerCase(),
+        azure_oid: selectedMsUser.azure_oid,
         role: msRole
       });
       if (res.data.success) {
         showToast(res.data.message || 'Microsoft account added successfully', 'success');
         setSelectedMsUser(null);
-        setDirectMsEmail('');
-        setDirectMsName('');
         setMsQuery('');
         setMsSearchResults([]);
         setShowModal(false);
@@ -601,133 +573,88 @@ const ManageUsersPage = () => {
               {/* Tab 2: Microsoft User Form (Search + Manual Email Entry) */}
               {activeTab === 'microsoft' && (
                 <form onSubmit={handleCreateMicrosoftUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  
-                  {/* Info Notice about Azure AD Admin Consent */}
-                  <div style={{
-                    padding: '0.65rem 0.85rem',
-                    borderRadius: '8px',
-                    background: 'rgba(59, 130, 246, 0.1)',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    fontSize: '0.775rem',
-                    color: '#90caf9',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '0.5rem',
-                    lineHeight: 1.4
-                  }}>
-                    <Info style={{ width: '16px', height: '16px', flexShrink: 0, marginTop: '2px', color: '#3b82f6' }} />
-                    <span>
-                      Add organizational Microsoft accounts by searching or typing their Microsoft email address directly (e.g. <strong>user@gsh.lk</strong>).
-                    </span>
-                  </div>
 
-                  {/* Search Bar */}
+                  {/* Search Bar - Single clean input */}
                   <div>
                     <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.3rem' }}>
-                      Option 1: Search Microsoft Graph API
+                      Search Microsoft Organizational Users
                     </label>
                     <div style={{ position: 'relative' }}>
                       <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
                       <input
                         type="text"
-                        placeholder="Search by name or email..."
+                        placeholder="Type a name or email to search..."
                         value={msQuery}
                         onChange={e => {
                           setMsQuery(e.target.value);
                           if (selectedMsUser) setSelectedMsUser(null);
                         }}
-                        style={{ width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', outline: 'none', boxSizing: 'border-box' }}
+                        style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }}
                       />
+                      {msSearching && (
+                        <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Searching...
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Search Results Dropdown / Picker */}
-                  {msQuery && (
-                    <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', background: 'var(--bg-primary)', padding: '0.35rem' }}>
+                  {/* Search Results */}
+                  {msQuery.trim().length >= 2 && (
+                    <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', background: 'var(--bg-primary)' }}>
                       {msSearching ? (
-                        <div style={{ padding: '0.65rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>Searching Microsoft Graph API...</div>
+                        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                          Searching Microsoft Graph API...
+                        </div>
                       ) : msSearchResults.length === 0 ? (
-                        <div style={{ padding: '0.65rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                          No matching Microsoft Graph users found. (Use Option 2 below to enter email directly)
+                        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                          No matching users found
                         </div>
                       ) : (
-                        msSearchResults.map((u, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => {
-                              setSelectedMsUser(u);
-                              setDirectMsEmail('');
-                              setDirectMsName('');
-                            }}
-                            style={{
-                              padding: '0.5rem 0.65rem',
-                              borderRadius: '4px',
-                              background: selectedMsUser?.mail === u.mail ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                              border: selectedMsUser?.mail === u.mail ? '1px solid #3b82f6' : '1px solid transparent',
-                              cursor: 'pointer',
-                              marginBottom: '0.2rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between'
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: '0.825rem', color: 'var(--text-main)' }}>{u.displayName}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#3b82f6' }}>{u.mail}</div>
+                        <div style={{ padding: '0.3rem' }}>
+                          {msSearchResults.map((u, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setSelectedMsUser(u)}
+                              style={{
+                                padding: '0.55rem 0.75rem',
+                                borderRadius: '6px',
+                                background: selectedMsUser?.mail === u.mail ? 'rgba(59, 130, 246, 0.18)' : 'transparent',
+                                border: selectedMsUser?.mail === u.mail ? '1px solid #3b82f6' : '1px solid transparent',
+                                cursor: 'pointer',
+                                marginBottom: '0.15rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                transition: 'background 0.15s'
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>{u.displayName}</div>
+                                <div style={{ fontSize: '0.77rem', color: '#60a5fa' }}>{u.mail}</div>
+                              </div>
+                              {selectedMsUser?.mail === u.mail && <CheckCircle style={{ width: '16px', height: '16px', color: '#3b82f6', flexShrink: 0 }} />}
                             </div>
-                            {selectedMsUser?.mail === u.mail && <CheckCircle style={{ width: '16px', height: '16px', color: '#3b82f6' }} />}
-                          </div>
-                        ))
+                          ))}
+                        </div>
                       )}
                     </div>
                   )}
 
-                  {/* Option 2: Enter Microsoft Email Directly */}
-                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem', marginTop: '0.2rem' }}>
-                    <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#3b82f6', display: 'block', marginBottom: '0.4rem' }}>
-                      Option 2: Or Enter Microsoft Email Directly
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  {/* Selected User Summary */}
+                  {selectedMsUser && (
+                    <div style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
-                        <label style={{ fontSize: '0.725rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>
-                          Microsoft Email Address *
-                        </label>
-                        <input
-                          type="email"
-                          placeholder="e.g. user@gsh.lk"
-                          value={directMsEmail}
-                          onChange={e => {
-                            setDirectMsEmail(e.target.value);
-                            if (selectedMsUser) setSelectedMsUser(null);
-                          }}
-                          style={{ width: '100%', padding: '0.55rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none', boxSizing: 'border-box' }}
-                        />
+                        <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Selected Account</div>
+                        <div style={{ fontWeight: 800, fontSize: '0.875rem', color: 'var(--text-main)' }}>{selectedMsUser.displayName}</div>
+                        <div style={{ fontSize: '0.79rem', color: '#93c5fd' }}>{selectedMsUser.mail}</div>
                       </div>
-                      <div>
-                        <label style={{ fontSize: '0.725rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>
-                          Full Name (Optional)
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Executive Name"
-                          value={directMsName}
-                          onChange={e => setDirectMsName(e.target.value)}
-                          style={{ width: '100%', padding: '0.55rem 0.65rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Selected User Summary Box */}
-                  {(selectedMsUser || directMsEmail) && (
-                    <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
-                      <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase' }}>Selected Account to Add:</div>
-                      <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)', marginTop: '0.15rem' }}>
-                        {selectedMsUser ? selectedMsUser.displayName : (directMsName || directMsEmail.split('@')[0])}
-                      </div>
-                      <div style={{ fontSize: '0.775rem', color: '#90caf9' }}>
-                        {selectedMsUser ? selectedMsUser.mail : directMsEmail}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedMsUser(null); setMsQuery(''); setMsSearchResults([]); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0.25rem' }}
+                        title="Clear selection"
+                      >✕</button>
                     </div>
                   )}
 
@@ -757,10 +684,10 @@ const ManageUsersPage = () => {
                     </button>
                     <button
                       type="submit"
-                      disabled={submitting || (!selectedMsUser && !directMsEmail)}
-                      style={{ padding: '0.6rem 1.4rem', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#ffffff', fontWeight: 800, fontSize: '0.85rem', cursor: (submitting || (!selectedMsUser && !directMsEmail)) ? 'not-allowed' : 'pointer' }}
+                      disabled={submitting || !selectedMsUser}
+                      style={{ padding: '0.6rem 1.4rem', background: selectedMsUser ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : 'var(--bg-tertiary)', border: 'none', borderRadius: 'var(--radius-xs)', color: selectedMsUser ? '#ffffff' : 'var(--text-muted)', fontWeight: 800, fontSize: '0.85rem', cursor: (submitting || !selectedMsUser) ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
                     >
-                      {submitting ? 'Adding...' : 'Add Microsoft User'}
+                      {submitting ? 'Adding...' : '+ Add Microsoft User'}
                     </button>
                   </div>
                 </form>
