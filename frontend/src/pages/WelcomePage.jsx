@@ -41,37 +41,6 @@ const WelcomePage = () => {
             </span>
           </div>
         </div>
-
-        <button
-          onClick={() => navigate('/login')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-            padding: '0.55rem 1.25rem',
-            background: 'linear-gradient(135deg, #c8102e 0%, #a00c24 100%)',
-            border: 'none',
-            borderRadius: '24px',
-            color: '#ffffff',
-            fontWeight: 700,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            boxShadow: '0 4px 14px rgba(200, 16, 46, 0.4)',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 6px 18px rgba(200, 16, 46, 0.6)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 14px rgba(200, 16, 46, 0.4)';
-          }}
-        >
-          Login
-          <ArrowRight style={{ width: '15px', height: '15px' }} />
-        </button>
       </header>
 
       {/* Main Hero Content (Fits 100vh cleanly on desktop) */}

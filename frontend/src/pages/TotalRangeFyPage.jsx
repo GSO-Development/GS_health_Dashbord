@@ -189,13 +189,13 @@ const TotalRangeFyPage = () => {
                         onClick={() => toggleRowExpand(row.division)}
                         style={{ 
                           borderBottom: '1px solid var(--border-color)', 
-                          background: isExpanded ? 'rgba(200,16,46,0.06)' : 'var(--bg-card)',
+                          background: isExpanded ? '#fef2f2' : 'var(--bg-card)',
                           cursor: 'pointer',
                           transition: 'background 0.15s ease'
                         }}
                       >
-                        <td className="sticky-cell-1" style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--gsh-red)' }}>{row.no}</td>
-                        <td className="sticky-cell-2" style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                        <td className="sticky-cell-1" style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--gsh-red)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)' }}>{row.no}</td>
+                        <td className="sticky-cell-2" style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: 'var(--text-main)', background: isExpanded ? '#fef2f2' : 'var(--bg-card)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
                             {hasSubGroups ? (
                               isExpanded ? <ChevronDown style={{ width: '16px', height: '16px', color: 'var(--gsh-red)', flexShrink: 0 }} /> : <ChevronRight style={{ width: '16px', height: '16px', color: 'var(--text-subtle)', flexShrink: 0 }} />
@@ -248,11 +248,11 @@ const TotalRangeFyPage = () => {
 
                           return (
                             <React.Fragment key={sgIdx}>
-                              <tr style={{ borderBottom: '1px solid var(--border-color)', background: isSgOpen ? 'rgba(0,168,150,0.06)' : 'var(--bg-hover)', fontSize: '0.78rem' }}>
-                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right' }}>↳</td>
+                              <tr style={{ borderBottom: '1px solid var(--border-color)', background: isSgOpen ? '#f0fdfa' : '#f8fafc', fontSize: '0.78rem' }}>
+                                <td className="sticky-cell-1" style={{ padding: '0.4rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>↳</td>
                                 
                                 {/* SALES GROUP BADGE WITH CLICK TO DROPDOWN + HOVER TOOLTIP */}
-                                <td className="sticky-cell-2" style={{ padding: '0.45rem 0.75rem 0.45rem 1rem', color: 'var(--text-main)' }}>
+                                <td className="sticky-cell-2" style={{ padding: '0.45rem 0.75rem 0.45rem 1rem', color: 'var(--text-main)', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>
                                   <span 
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -330,12 +330,12 @@ const TotalRangeFyPage = () => {
                                       fontSize: '0.75rem' 
                                     }}
                                   >
-                                    <td className="sticky-cell-1" style={{ padding: '0.35rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', fontSize: '0.7rem' }}>
+                                    <td className="sticky-cell-1" style={{ padding: '0.35rem 0.75rem', color: 'var(--text-subtle)', textAlign: 'right', fontSize: '0.7rem', background: 'var(--bg-card)' }}>
                                       ↳ ↳
                                     </td>
 
                                     {/* Product SKU Name + Part No Badge */}
-                                    <td className="sticky-cell-2" style={{ padding: '0.35rem 0.75rem 0.35rem 1.2rem' }}>
+                                    <td className="sticky-cell-2" style={{ padding: '0.35rem 0.75rem 0.35rem 1.2rem', background: 'var(--bg-card)' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', width: '100%' }}>
                                         <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)', background: 'rgba(200,16,46,0.08)', padding: '0.1rem 0.35rem', borderRadius: '3px', border: '1px solid rgba(200,16,46,0.2)', fontSize: '0.7rem', flexShrink: 0 }}>
                                           {p.part_no}

@@ -502,8 +502,8 @@ body {
 .sticky-col-super {
   position: sticky !important;
   left: 0 !important;
-  zIndex: 30 !important;
-  background: var(--bg-hover) !important;
+  z-index: 30 !important;
+  background-color: var(--bg-secondary) !important;
   border-right: 2px solid var(--border-color) !important;
   box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12) !important;
 }
@@ -511,8 +511,8 @@ body {
 .sticky-col-1 {
   position: sticky !important;
   left: 0 !important;
-  zIndex: 25 !important;
-  background: var(--bg-card) !important;
+  z-index: 25 !important;
+  background-color: var(--bg-card) !important;
   width: 34px !important;
   min-width: 34px !important;
   max-width: 34px !important;
@@ -521,8 +521,8 @@ body {
 .sticky-col-2 {
   position: sticky !important;
   left: 34px !important;
-  zIndex: 25 !important;
-  background: var(--bg-card) !important;
+  z-index: 25 !important;
+  background-color: var(--bg-card) !important;
   border-right: 2px solid var(--border-color) !important;
   box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12) !important;
   min-width: 120px !important;
@@ -532,8 +532,8 @@ body {
 .sticky-cell-1 {
   position: sticky !important;
   left: 0 !important;
-  zIndex: 5 !important;
-  background: inherit !important;
+  z-index: 10 !important;
+  background-color: var(--bg-card);
   width: 34px !important;
   min-width: 34px !important;
   max-width: 34px !important;
@@ -543,8 +543,8 @@ body {
 .sticky-cell-2 {
   position: sticky !important;
   left: 34px !important;
-  zIndex: 5 !important;
-  background: inherit !important;
+  z-index: 10 !important;
+  background-color: var(--bg-card);
   border-right: 2px solid var(--border-color) !important;
   box-shadow: 3px 0 8px -2px rgba(0,0,0,0.12) !important;
   min-width: 120px !important;
