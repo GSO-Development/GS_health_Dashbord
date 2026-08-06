@@ -15,17 +15,26 @@ const fmtMnFull = (val) => {
   return Math.round(mn).toLocaleString('en-US') + ' M';
 };
 
-const CircularGauge = ({ percentage, variance, size = 110, activeColor = '#06b6d4' }) => {
+const CircularGauge = ({ percentage, variance, size = 115, activeColor = '#06b6d4', gradientId = 'disGaugeGrad' }) => {
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const cappedPct = Math.min(percentage, 999);
   const strokeDashoffset = circumference - (Math.min(cappedPct, 100) / 100) * circumference;
 
+  const isWarning = activeColor === '#f59e0b';
+  const stopColor = isWarning ? '#d97706' : (activeColor === '#06b6d4' ? '#0891b2' : (activeColor === '#3b82f6' ? '#1d4ed8' : '#059669'));
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <div style={{ position: 'relative', width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.08))' }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={activeColor} />
+              <stop offset="100%" stopColor={stopColor} />
+            </linearGradient>
+          </defs>
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -39,26 +48,35 @@ const CircularGauge = ({ percentage, variance, size = 110, activeColor = '#06b6d
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke={activeColor}
+            stroke={`url(#${gradientId})`}
             strokeWidth={strokeWidth}
             fill="transparent"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+            style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}
           />
         </svg>
         <div style={{ position: 'absolute', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: size > 120 ? '1.5rem' : '1.35rem', fontWeight: 900, color: 'var(--text-main)', lineHeight: 1 }}>
+          <span style={{ fontSize: size > 110 ? '1.4rem' : '1.2rem', fontWeight: 900, color: 'var(--text-main)', lineHeight: 1, letterSpacing: '-0.02em' }}>
             {percentage}%
           </span>
         </div>
       </div>
-      <div style={{ textAlign: 'center', marginTop: '0.4rem' }}>
-        <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
+      <div style={{ textAlign: 'center', marginTop: '0.45rem' }}>
+        <div style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-subtle)', marginBottom: '0.15rem' }}>
           VARIANCE
         </div>
-        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: activeColor }}>
+        <div style={{
+          fontSize: '0.8rem',
+          fontWeight: 800,
+          color: activeColor,
+          background: `rgba(6, 182, 212, 0.1)`,
+          padding: '0.15rem 0.55rem',
+          borderRadius: '10px',
+          border: `1px solid rgba(6, 182, 212, 0.3)`,
+          display: 'inline-block'
+        }}>
           {variance}
         </div>
       </div>
@@ -160,7 +178,7 @@ const DisDashboardFyPage = () => {
               </div>
             </div>
             <div style={{ flexShrink: 0 }}>
-              <CircularGauge percentage={pri.pct || 0} variance={`${fmtMn(pri.variance)}`} size={110} activeColor="#06b6d4" />
+              <CircularGauge percentage={pri.pct || 0} variance={`${fmtMn(pri.variance)}`} size={110} activeColor="#06b6d4" gradientId="disPriGrad" />
             </div>
           </div>
         </div>
@@ -194,7 +212,7 @@ const DisDashboardFyPage = () => {
               </div>
             </div>
             <div style={{ flexShrink: 0 }}>
-              <CircularGauge percentage={rd.pct || 0} variance={`${fmtMn(rd.variance)}`} size={110} activeColor={rd.pct >= 100 ? '#10b981' : '#f59e0b'} />
+              <CircularGauge percentage={rd.pct || 0} variance={`${fmtMn(rd.variance)}`} size={110} activeColor={rd.pct >= 100 ? '#10b981' : '#f59e0b'} gradientId="disRdGrad" />
             </div>
           </div>
         </div>
