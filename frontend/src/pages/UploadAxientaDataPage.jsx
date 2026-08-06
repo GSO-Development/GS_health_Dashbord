@@ -329,18 +329,27 @@ const UploadAxientaDataPage = () => {
 
                 {/* Day Summary Highlights */}
                 {hasData ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.4rem' }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <Package style={{ width: '12px', height: '12px', color: 'var(--gsh-teal)' }} />
-                      <strong>{daySummary.row_count}</strong> Records
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.35rem' }}>
+                    {/* 1. Sheet Total Count (Day 1 - Day N Cumulative) */}
+                    <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Sheet Total:</span>
+                      <strong style={{ color: 'var(--text-main)', fontSize: '0.72rem' }}>{(daySummary.sheet_total_count ?? daySummary.row_count).toLocaleString()}</strong>
                     </div>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--gsh-red)' }}>
-                      LKR {fmt(daySummary.total_value)}
+
+                    {/* 2. Daily Count (This Day Only: Day N - Day N-1) */}
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.12rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Daily Items:</span>
+                      <strong>+{(daySummary.daily_count ?? daySummary.row_count).toLocaleString()}</strong>
+                    </div>
+
+                    {/* Daily Net Value */}
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gsh-red)', textAlign: 'right', marginTop: '0.05rem' }}>
+                      LKR {fmt(daySummary.daily_value ?? daySummary.total_value)}
                     </div>
                   </div>
                 ) : (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-subtle)', fontStyle: 'italic', marginTop: '0.5rem' }}>
-                    Click to Upload Excel
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-subtle)', fontStyle: 'italic', marginTop: '0.5rem' }}>
+                    Click to Upload
                   </div>
                 )}
               </div>

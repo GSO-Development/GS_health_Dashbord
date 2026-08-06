@@ -40,23 +40,39 @@ def get_calendar_summary(
         cursor.execute("""
             SELECT 
                 DATE_FORMAT(entry_date, '%%Y-%%m-%%d') as entry_date,
-                COUNT(*) as row_count,
-                COALESCE(SUM(value), 0) as total_value,
-                COALESCE(SUM(qty), 0) as total_qty
+                COUNT(*) as sheet_total_count,
+                COALESCE(SUM(value), 0) as sheet_total_value,
+                COALESCE(SUM(qty), 0) as sheet_total_qty
             FROM axienta_data
             WHERE YEAR(entry_date) = %s AND MONTH(entry_date) = %s
-            GROUP BY entry_date;
+            GROUP BY entry_date
+            ORDER BY entry_date ASC;
         """, (year, month))
         rows = cursor.fetchall()
     conn.close()
 
     summary_map = {}
+    prev_count = 0
+    prev_val = 0.0
+
     for r in rows:
+        c_count = r['sheet_total_count']
+        c_val = float(r['sheet_total_value'])
+        
+        daily_count = max(c_count - prev_count, 0)
+        daily_value = max(c_val - prev_val, 0.0)
+
         summary_map[r['entry_date']] = {
-            "row_count": r['row_count'],
-            "total_value": round(r['total_value'], 2),
-            "total_qty": round(r['total_qty'], 2)
+            "sheet_total_count": c_count,
+            "daily_count": daily_count,
+            "sheet_total_value": round(c_val, 2),
+            "daily_value": round(daily_value, 2),
+            "row_count": c_count,
+            "total_value": round(c_val, 2)
         }
+
+        prev_count = c_count
+        prev_val = c_val
 
     return {
         "year": year,
