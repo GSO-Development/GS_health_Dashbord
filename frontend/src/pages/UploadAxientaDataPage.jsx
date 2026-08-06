@@ -329,22 +329,17 @@ const UploadAxientaDataPage = () => {
 
                 {/* Day Summary Highlights */}
                 {hasData ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.35rem' }}>
-                    {/* 1. Sheet Total Count (Day 1 - Day N Cumulative) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.35rem' }}>
+                    {/* 1. Sheet Total Value (Day 1 - Day N Cumulative LKR) */}
                     <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span>Sheet Total:</span>
-                      <strong style={{ color: 'var(--text-main)', fontSize: '0.72rem' }}>{(daySummary.sheet_total_count ?? daySummary.row_count).toLocaleString()}</strong>
+                      <strong style={{ color: 'var(--text-main)', fontSize: '0.72rem' }}>LKR {fmt(daySummary.sheet_total_value ?? daySummary.total_value)}</strong>
                     </div>
 
-                    {/* 2. Daily Count (This Day Only: Day N - Day N-1) */}
-                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.12rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    {/* 2. Daily Total Value (This Day Only: Day N - Day N-1 LKR) */}
+                    <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.15rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span>Daily Total:</span>
-                      <strong>+{(daySummary.daily_count ?? daySummary.row_count).toLocaleString()}</strong>
-                    </div>
-
-                    {/* Daily Net Value */}
-                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--gsh-red)', textAlign: 'right', marginTop: '0.05rem' }}>
-                      LKR {fmt(daySummary.daily_value ?? daySummary.total_value)}
+                      <strong style={{ color: 'var(--gsh-teal)' }}>LKR {fmt(daySummary.daily_value ?? daySummary.total_value)}</strong>
                     </div>
                   </div>
                 ) : (
