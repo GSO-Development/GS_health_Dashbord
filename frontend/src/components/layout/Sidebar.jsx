@@ -57,11 +57,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     },
 
     // Admin Master Records Section
-    { path: '/total-budget', label: 'Total Budget', sub: 'total_budget (649 records)', icon: Calculator, adminOnly: true, divider: true, sectionHeader: '🛡️ Admin Master Records' },
-    { path: '/dis-budget', label: 'Dis Budget', sub: 'dis_budget (9,644 records)', icon: PieChart, adminOnly: true },
-    { path: '/invoice-output', label: 'Invoice Output Report', sub: 'invoice_output (19,046 records)', icon: FileText, adminOnly: true },
-    { path: '/outstanding-output', label: 'Outstanding Output Report', sub: 'outstanding_output (170 records)', icon: Truck, adminOnly: true },
-    { path: '/map-divisions', label: 'Map Divisions', sub: 'Sales Group → Range mappings', icon: Network, adminOnly: true },
+    { path: '/map-divisions', label: 'Map Divisions', sub: 'Sales Group → Range mappings', icon: Network, adminOnly: true, divider: true, sectionHeader: '🛡️ Admin Master Records' },
     { path: '/admin/users', label: 'Manage Users', sub: 'User accounts & privileges', icon: Users, adminOnly: true },
   ];
 

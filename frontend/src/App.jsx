@@ -8,10 +8,6 @@ import DashboardFyPage from './pages/DashboardFyPage';
 import TotalRangeFyPage from './pages/TotalRangeFyPage';
 import DisDashboardFyPage from './pages/DisDashboardFyPage';
 import DistriRangeFyPage from './pages/DistriRangeFyPage';
-import TotalBudgetPage from './pages/TotalBudgetPage';
-import DisBudgetPage from './pages/DisBudgetPage';
-import InvoiceOutputPage from './pages/InvoiceOutputPage';
-import OutstandingOutputPage from './pages/OutstandingOutputPage';
 import UploadAnnualBudgetPage from './pages/UploadAnnualBudgetPage';
 import UploadDisBudgetPage from './pages/UploadDisBudgetPage';
 import UploadAxientaDataPage from './pages/UploadAxientaDataPage';
@@ -62,10 +58,6 @@ function AppRoutes() {
         <Route path="distri-range-fy" element={<DistriRangeFyPage />} />
 
         {/* ADMIN ONLY Routes */}
-        <Route path="total-budget" element={<RequireAdmin><TotalBudgetPage /></RequireAdmin>} />
-        <Route path="dis-budget" element={<RequireAdmin><DisBudgetPage /></RequireAdmin>} />
-        <Route path="invoice-output" element={<RequireAdmin><InvoiceOutputPage /></RequireAdmin>} />
-        <Route path="outstanding-output" element={<RequireAdmin><OutstandingOutputPage /></RequireAdmin>} />
         <Route path="map-divisions" element={<RequireAdmin><MapDivisionsPage /></RequireAdmin>} />
         
         {/* Oracle IFS Dedicated Sync Routes */}

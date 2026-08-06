@@ -176,6 +176,10 @@ def get_mapping_stats():
         mapped_cnt = m_row['mapped_cnt'] or 0
         unmapped_cnt = m_row['unmapped_cnt'] or 0
 
+        # Total items count in total_budget
+        cursor.execute("SELECT COUNT(*) as cnt FROM total_budget;")
+        total_items_cnt = cursor.fetchone()['cnt'] or 0
+
         # Unmapped Sales Groups list
         cursor.execute("""
             SELECT DISTINCT TRIM(b.sales_group) as unmapped_sg, TRIM(b.range_name) as target_range
@@ -192,6 +196,7 @@ def get_mapping_stats():
         "total_ranges": div_range_count,
         "mapped_count": mapped_cnt,
         "unmapped_count": unmapped_cnt,
+        "total_items": total_items_cnt,
         "unmapped_list": unmapped_list
     }
 

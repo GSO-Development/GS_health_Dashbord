@@ -422,36 +422,32 @@ const MapDivisionsPage = () => {
           </div>
         </div>
 
-        {/* CARD 4: Unmapped Count */}
-        <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: `4px solid ${stats.unmapped_count > 0 ? '#ef4444' : '#f59e0b'}`, position: 'relative' }}>
+        {/* CARD 4: Total Items Count */}
+        <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid #3b82f6', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: stats.unmapped_count > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: stats.unmapped_count > 0 ? '#ef4444' : '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <AlertTriangle style={{ width: '22px', height: '22px' }} />
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Package style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  Not Mapped Count
+                  Total Items Count
                 </span>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unmapped Sales Groups</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mapped Product SKUs / Items</p>
               </div>
             </div>
 
-            <button
-              onClick={handleAutoSync}
-              title="Sync missing mappings directly from total_budget"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.35rem 0.6rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
-            >
-              <Database style={{ width: '13px', height: '13px', color: '#f59e0b' }} /> Auto-Sync
-            </button>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+              📦 Active SKUs
+            </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: stats.unmapped_count > 0 ? '#ef4444' : '#f59e0b' }}>
-              {stats.unmapped_count} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Pending</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              {(stats.total_items || mappings.length).toLocaleString('en-US')} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
             </div>
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: stats.unmapped_count === 0 ? '#10b981' : '#ef4444' }}>
-              {stats.unmapped_count === 0 ? 'All 100% Synced' : 'Requires Sync'}
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
+              From total_budget items
             </span>
           </div>
         </div>
