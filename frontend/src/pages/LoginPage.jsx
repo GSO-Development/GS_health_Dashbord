@@ -8,7 +8,7 @@ import api from '../services/api';
 const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, setUser, setIsAuthenticated, loading } = useAuth();
+  const { login, loginWithToken, loading } = useAuth();
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -25,15 +25,23 @@ const LoginPage = () => {
 
     if (token && userStr) {
       try {
-        const userObj = JSON.parse(decodeURIComponent(userStr));
-        localStorage.setItem('gsh_token', token);
-        localStorage.setItem('gsh_user', JSON.stringify(userObj));
-        setUser(userObj);
-        setIsAuthenticated(true);
+        let userObj;
+        try {
+          userObj = JSON.parse(userStr);
+        } catch {
+          userObj = JSON.parse(decodeURIComponent(userStr));
+        }
 
-        // Redirect based on role
-        navigate('/dashboard-fy', { replace: true });
+        loginWithToken(userObj, token);
+
+        // Redirect based on assigned role
+        if (userObj.role === 'admin') {
+          navigate('/admin/users', { replace: true });
+        } else {
+          navigate('/dashboard-fy', { replace: true });
+        }
       } catch (e) {
+        console.error('OAuth token parse error:', e);
         setError('Failed to process Microsoft login response');
       }
     } else if (errParam) {
@@ -43,7 +51,7 @@ const LoginPage = () => {
         setError(`Microsoft Sign-In Error: ${decodeURIComponent(errParam)}`);
       }
     }
-  }, [location]);
+  }, [location, loginWithToken, navigate]);
 
   // System Login Handler
   const handleSubmit = async (e) => {
@@ -57,7 +65,11 @@ const LoginPage = () => {
 
     const result = await login(username, password);
     if (result.success) {
-      navigate('/dashboard-fy', { replace: true });
+      if (result.user?.role === 'admin') {
+        navigate('/admin/users', { replace: true });
+      } else {
+        navigate('/dashboard-fy', { replace: true });
+      }
     } else {
       setError(result.error || 'Invalid username or password');
     }

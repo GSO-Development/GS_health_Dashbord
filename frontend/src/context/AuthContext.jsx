@@ -37,6 +37,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loginWithToken = (u, t) => {
+    setUser(u);
+    setToken(t);
+    localStorage.setItem('gsh_user', JSON.stringify(u));
+    localStorage.setItem('gsh_token', t);
+  };
+
   const logout = () => {
     setUser(null);
     setToken('');
@@ -49,7 +56,7 @@ export const AuthProvider = ({ children }) => {
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, isAuthenticated, isAdmin, isUser, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, isAuthenticated, isAdmin, isUser, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );
