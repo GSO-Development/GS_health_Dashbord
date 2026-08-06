@@ -54,7 +54,7 @@ const ManageUsersPage = () => {
 
   // Handle Microsoft Graph User Search
   useEffect(() => {
-    if (!msQuery || msQuery.trim().length < 2) {
+    if (!msQuery || msQuery.trim().length < 2 || selectedMsUser) {
       setMsSearchResults([]);
       return;
     }
@@ -73,7 +73,7 @@ const ManageUsersPage = () => {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [msQuery]);
+  }, [msQuery, selectedMsUser]);
 
   // Submit System User
   const handleCreateSystemUser = async (e) => {
@@ -580,7 +580,7 @@ const ManageUsersPage = () => {
                       Search Microsoft Organizational Users
                     </label>
                     <div style={{ position: 'relative' }}>
-                      <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
+                      <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: selectedMsUser ? '#10b981' : 'var(--text-subtle)' }} />
                       <input
                         type="text"
                         placeholder="Type a name or email to search..."
@@ -589,18 +589,36 @@ const ManageUsersPage = () => {
                           setMsQuery(e.target.value);
                           if (selectedMsUser) setSelectedMsUser(null);
                         }}
-                        style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 2.2rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }}
+                        style={{
+                          width: '100%',
+                          padding: '0.6rem 2.2rem 0.6rem 2.2rem',
+                          background: selectedMsUser ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-primary)',
+                          border: selectedMsUser ? '1px solid #10b981' : '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-xs)',
+                          color: selectedMsUser ? '#10b981' : 'var(--text-main)',
+                          fontWeight: selectedMsUser ? 700 : 400,
+                          fontSize: '0.875rem',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
                       />
-                      {msSearching && (
+                      {selectedMsUser ? (
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedMsUser(null); setMsQuery(''); setMsSearchResults([]); }}
+                          style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 800, lineHeight: 1 }}
+                          title="Clear selection and search again"
+                        >✕</button>
+                      ) : msSearching ? (
                         <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           Searching...
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
-                  {/* Search Results */}
-                  {msQuery.trim().length >= 2 && (
+                  {/* Search Results Dropdown List (hides when user is selected) */}
+                  {!selectedMsUser && msQuery.trim().length >= 2 && (
                     <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', background: 'var(--bg-primary)' }}>
                       {msSearching ? (
                         <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
@@ -615,12 +633,16 @@ const ManageUsersPage = () => {
                           {msSearchResults.map((u, idx) => (
                             <div
                               key={idx}
-                              onClick={() => setSelectedMsUser(u)}
+                              onClick={() => {
+                                setSelectedMsUser(u);
+                                setMsQuery(`${u.displayName} (${u.mail})`);
+                                setMsSearchResults([]);
+                              }}
                               style={{
                                 padding: '0.55rem 0.75rem',
                                 borderRadius: '6px',
-                                background: selectedMsUser?.mail === u.mail ? 'rgba(59, 130, 246, 0.18)' : 'transparent',
-                                border: selectedMsUser?.mail === u.mail ? '1px solid #3b82f6' : '1px solid transparent',
+                                background: 'transparent',
+                                border: '1px solid transparent',
                                 cursor: 'pointer',
                                 marginBottom: '0.15rem',
                                 display: 'flex',
@@ -628,12 +650,14 @@ const ManageUsersPage = () => {
                                 justifyContent: 'space-between',
                                 transition: 'background 0.15s'
                               }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                             >
                               <div>
                                 <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)' }}>{u.displayName}</div>
                                 <div style={{ fontSize: '0.77rem', color: '#60a5fa' }}>{u.mail}</div>
                               </div>
-                              {selectedMsUser?.mail === u.mail && <CheckCircle style={{ width: '16px', height: '16px', color: '#3b82f6', flexShrink: 0 }} />}
+                              <span style={{ fontSize: '0.75rem', color: '#3b82f6', fontWeight: 600 }}>Select ➔</span>
                             </div>
                           ))}
                         </div>
@@ -641,20 +665,16 @@ const ManageUsersPage = () => {
                     </div>
                   )}
 
-                  {/* Selected User Summary */}
+                  {/* Selected User Summary Badge */}
                   {selectedMsUser && (
-                    <div style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-xs)', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem' }}>Selected Account</div>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <CheckCircle style={{ width: '14px', height: '14px' }} /> Selected User Ready To Add
+                        </div>
                         <div style={{ fontWeight: 800, fontSize: '0.875rem', color: 'var(--text-main)' }}>{selectedMsUser.displayName}</div>
-                        <div style={{ fontSize: '0.79rem', color: '#93c5fd' }}>{selectedMsUser.mail}</div>
+                        <div style={{ fontSize: '0.79rem', color: '#6ee7b7' }}>{selectedMsUser.mail}</div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedMsUser(null); setMsQuery(''); setMsSearchResults([]); }}
-                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0.25rem' }}
-                        title="Clear selection"
-                      >✕</button>
                     </div>
                   )}
 
