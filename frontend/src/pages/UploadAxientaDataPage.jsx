@@ -338,7 +338,7 @@ const UploadAxientaDataPage = () => {
 
                     {/* 2. Daily Count (This Day Only: Day N - Day N-1) */}
                     <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.12rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Daily Items:</span>
+                      <span>Daily Total:</span>
                       <strong>+{(daySummary.daily_count ?? daySummary.row_count).toLocaleString()}</strong>
                     </div>
 
