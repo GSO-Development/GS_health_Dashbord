@@ -230,7 +230,7 @@ def get_graph_app_token():
 
 @router.get("/microsoft/search-users")
 def search_microsoft_users(q: str = Query("")):
-    """Search Microsoft Graph API for organizational users by email/name using server-side $filter"""
+    """Search Microsoft Graph API for organizational users by email/name using multi-strategy search"""
     if not q or len(q.strip()) < 2:
         return {"users": []}
 
@@ -241,63 +241,88 @@ def search_microsoft_users(q: str = Query("")):
         if not access_token:
             return {"users": [], "error": "Failed to authenticate with Microsoft Graph API"}
 
-        # Use $filter with startsWith for displayName and mail - server-side, fast search
-        encoded_q = urllib.parse.quote(search_query)
-        graph_url = (
-            f"https://graph.microsoft.com/v1.0/users"
-            f"?$select=id,displayName,mail,userPrincipalName"
-            f"&$filter=startsWith(displayName,'{search_query}') or startsWith(mail,'{search_query}') or startsWith(userPrincipalName,'{search_query}')"
-            f"&$top=15"
-            f"&$orderby=displayName"
-        )
+        seen_ids = set()
+        matched_users = []
 
-        req = urllib.request.Request(graph_url, headers={
-            "Authorization": f"Bearer {access_token}",
-            "ConsistencyLevel": "eventual"
-        })
+        def add_users(users_list):
+            for u in users_list:
+                u_id = u.get("id")
+                if u_id and u_id not in seen_ids:
+                    mail = u.get("mail") or u.get("userPrincipalName") or ""
+                    if mail:
+                        seen_ids.add(u_id)
+                        matched_users.append({
+                            "azure_oid": u_id,
+                            "displayName": u.get("displayName") or "",
+                            "mail": mail,
+                            "userPrincipalName": u.get("userPrincipalName") or mail
+                        })
 
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            all_users = data.get("value", [])
+        # Strategy 1: MS Graph $search query (best for full emails, names, last names)
+        try:
+            clean_q = search_query.replace('"', '').strip()
+            words = [w for w in clean_q.split() if w]
+            clauses = []
+            for w in words:
+                clauses.append(f'"displayName:{w}"')
+                clauses.append(f'"mail:{w}"')
+                clauses.append(f'"userPrincipalName:{w}"')
+            
+            search_expr = " OR ".join(clauses)
+            url1 = f"https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$search={urllib.parse.quote(search_expr)}&$count=true&$top=25"
+            
+            req1 = urllib.request.Request(url1, headers={
+                "Authorization": f"Bearer {access_token}",
+                "ConsistencyLevel": "eventual"
+            })
+            with urllib.request.urlopen(req1) as resp1:
+                data1 = json.loads(resp1.read().decode("utf-8"))
+                add_users(data1.get("value", []))
+        except Exception as e1:
+            print("MS Graph Strategy 1 ($search) Note:", str(e1))
 
-        matched = []
-        for u in all_users:
-            mail = u.get("mail") or u.get("userPrincipalName") or ""
-            name = u.get("displayName") or ""
-            if mail:  # Only include users with a valid email
-                matched.append({
-                    "azure_oid": u.get("id"),
-                    "displayName": name,
-                    "mail": mail,
-                    "userPrincipalName": u.get("userPrincipalName") or mail
-                })
+        # Strategy 2: Properly URL-encoded $filter with startsWith
+        try:
+            clean_q = search_query.replace("'", "''")
+            filter_expr = f"startsWith(displayName,'{clean_q}') or startsWith(mail,'{clean_q}') or startsWith(userPrincipalName,'{clean_q}')"
+            url2 = f"https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$filter={urllib.parse.quote(filter_expr)}&$top=25"
+            
+            req2 = urllib.request.Request(url2, headers={
+                "Authorization": f"Bearer {access_token}",
+                "ConsistencyLevel": "eventual"
+            })
+            with urllib.request.urlopen(req2) as resp2:
+                data2 = json.loads(resp2.read().decode("utf-8"))
+                add_users(data2.get("value", []))
+        except Exception as e2:
+            print("MS Graph Strategy 2 ($filter) Note:", str(e2))
 
-        return {"users": matched}
+        # Strategy 3: Multi-token startsWith (if query has @, dot, or space)
+        if ("@" in search_query or "." in search_query or " " in search_query) and len(matched_users) < 5:
+            try:
+                tokens = [t.replace("'", "''") for t in search_query.replace('@', ' ').replace('.', ' ').split() if len(t) > 1]
+                if tokens:
+                    filter_parts = []
+                    for t in tokens:
+                        filter_parts.append(f"startsWith(displayName,'{t}')")
+                        filter_parts.append(f"startsWith(mail,'{t}')")
+                        filter_parts.append(f"startsWith(userPrincipalName,'{t}')")
+                    
+                    filter_expr3 = " or ".join(filter_parts)
+                    url3 = f"https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$filter={urllib.parse.quote(filter_expr3)}&$top=25"
+                    
+                    req3 = urllib.request.Request(url3, headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "ConsistencyLevel": "eventual"
+                    })
+                    with urllib.request.urlopen(req3) as resp3:
+                        data3 = json.loads(resp3.read().decode("utf-8"))
+                        add_users(data3.get("value", []))
+            except Exception as e3:
+                print("MS Graph Strategy 3 (tokenized) Note:", str(e3))
+
+        return {"users": matched_users}
 
     except Exception as e:
-        err_str = str(e)
-        print("Microsoft Graph User Search Error:", err_str)
-        # Fallback: fetch all and filter client-side (slower but works without ConsistencyLevel)
-        try:
-            access_token = get_graph_app_token()
-            graph_url = "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName&$top=100"
-            req = urllib.request.Request(graph_url, headers={"Authorization": f"Bearer {access_token}"})
-            with urllib.request.urlopen(req) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                all_users = data.get("value", [])
-            
-            q_lower = search_query.lower()
-            matched = []
-            for u in all_users:
-                mail = u.get("mail") or u.get("userPrincipalName") or ""
-                name = u.get("displayName") or ""
-                if (q_lower in name.lower() or q_lower in mail.lower()) and mail:
-                    matched.append({
-                        "azure_oid": u.get("id"),
-                        "displayName": name,
-                        "mail": mail,
-                        "userPrincipalName": u.get("userPrincipalName") or mail
-                    })
-            return {"users": matched}
-        except Exception as e2:
-            return {"users": [], "error": str(e2)}
+        print("Microsoft Graph User Search Exception:", str(e))
+        return {"users": [], "error": str(e)}
