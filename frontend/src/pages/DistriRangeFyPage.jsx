@@ -96,18 +96,6 @@ const DistriRangeFyPage = () => {
             Click any Division or Subgroup row to expand child items. Live Primary & RD Target/Actual metrics.
           </p>
         </div>
-
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <button onClick={expandAll} style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
-            📂 Expand All
-          </button>
-          <button onClick={collapseAll} style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
-            📁 Collapse All
-          </button>
-          <button onClick={fetchDistriRangeData} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}>
-            <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh Live Data
-          </button>
-        </div>
       </div>
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}

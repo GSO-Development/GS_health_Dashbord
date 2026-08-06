@@ -129,13 +129,6 @@ const DisDashboardFyPage = () => {
             Executive Overview comparing Primary Targets vs Actuals & RD Targets vs Actuals (Live MySQL Data).
           </p>
         </div>
-
-        <button
-          onClick={fetchDisDashboardData}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}
-        >
-          <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh Live Data
-        </button>
       </div>
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}

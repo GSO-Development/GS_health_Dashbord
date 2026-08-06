@@ -131,9 +131,6 @@ const DashboardFyPage = () => {
         <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
           Dashboard FY 2026/27 Overview ({data?.month_label || 'July 2026'})
         </h2>
-        <button onClick={loadData} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}>
-          <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh
-        </button>
       </div>
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}

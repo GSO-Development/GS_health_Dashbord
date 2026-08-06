@@ -95,10 +95,6 @@ const TotalRangeFyPage = () => {
             Ranges created in Admin (A to Z) mapped with Monthly, Cumulative (Last 4M), and Annual Sales Updates (Values in LKR). Click Division Range for Sales Groups, click Sales Group for Product SKUs aligned with headers.
           </p>
         </div>
-
-        <button onClick={loadRangeReport} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 0.9rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer' }}>
-          <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh
-        </button>
       </div>
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
