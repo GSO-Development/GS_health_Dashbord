@@ -177,9 +177,10 @@ const MapDivisionsPage = () => {
 
   // Derived Analytics & Counts
   const nextPrimaryId = useMemo(() => {
-    if (!mappings || mappings.length === 0) return 1;
-    const max = Math.max(...mappings.map(m => m.id || 0));
-    return max + 1;
+    if (!Array.isArray(mappings) || mappings.length === 0) return 1;
+    const validIds = mappings.map(m => Number(m.id) || 0).filter(id => !isNaN(id) && id > 0);
+    if (validIds.length === 0) return 1;
+    return Math.max(...validIds) + 1;
   }, [mappings]);
 
   const uniqueSalesGroups = useMemo(() => {
@@ -721,6 +722,61 @@ const MapDivisionsPage = () => {
               </button>
             </div>
           </form>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── MODAL 2: VIEW ALL (Sales Groups or Ranges) ─── */}
+      {viewModalType && ReactDOM.createPortal(
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setViewModalType(null); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            zIndex: 999999, background: 'rgba(0, 0, 0, 0.7)', 
+            backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', padding: '1rem', boxSizing: 'border-box'
+          }}
+        >
+          <div 
+            style={{ 
+              width: '100%', maxWidth: '560px', maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+              background: 'var(--bg-card)', border: '1px solid var(--border-color)', 
+              borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Eye style={{ width: '20px', height: '20px', color: viewModalType === 'sales_group' ? 'var(--gsh-red)' : 'var(--gsh-teal)' }} />
+                All Mapped {viewModalType === 'sales_group' ? 'Sales Groups' : 'Ranges'} ({viewModalType === 'sales_group' ? uniqueSalesGroups.length : uniqueRanges.length})
+              </h3>
+              <button type="button" onClick={() => setViewModalType(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)', padding: '0.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 0' }}>
+              {(viewModalType === 'sales_group' ? uniqueSalesGroups : uniqueRanges).map((item, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '0.825rem',
+                    fontWeight: 700,
+                    background: viewModalType === 'sales_group' ? 'rgba(200, 16, 46, 0.08)' : 'rgba(0, 168, 150, 0.08)',
+                    color: viewModalType === 'sales_group' ? 'var(--gsh-red)' : 'var(--gsh-teal)',
+                    border: `1px solid ${viewModalType === 'sales_group' ? 'rgba(200, 16, 46, 0.2)' : 'rgba(0, 168, 150, 0.2)'}`
+                  }}
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', marginTop: '1rem' }}>
+              <button type="button" onClick={() => setViewModalType(null)} style={{ padding: '0.5rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+                Close
+              </button>
+            </div>
+          </div>
         </div>,
         document.body
       )}
