@@ -10,6 +10,17 @@ const api = axios.create({
   },
 });
 
+// Attach Authorization Bearer token to all outgoing requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('gsh_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
 // Check database and backend server health
 export const checkDatabaseHealth = async () => {
   try {

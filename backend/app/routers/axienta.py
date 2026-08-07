@@ -131,7 +131,17 @@ async def upload_axienta_excel(
 
     try:
         contents = await file.read()
+        # FIX-11: Validate File Magic Bytes (ZIP header for .xlsx or OLE header for .xls)
+        is_xlsx = contents.startswith(b'PK\x03\x04')
+        is_xls = contents.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1')
+        if not (is_xlsx or is_xls):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Security Error: Uploaded file header does not match valid Excel format."
+            )
         df = pd.read_excel(io.BytesIO(contents))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

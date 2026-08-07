@@ -18,12 +18,33 @@ const LoginPage = () => {
   // Check for Microsoft OAuth Callback Query Parameters in URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
+    const oauthCode = params.get('oauth_code');
     const token = params.get('token');
     const userStr = params.get('user');
     const errParam = params.get('error');
     const emailParam = params.get('email');
 
-    if (token && userStr) {
+    // FIX-9: Exchange temporary oauth_code securely via POST
+    if (oauthCode) {
+      setMsLoading(true);
+      api.post('/auth/microsoft/exchange', { code: oauthCode })
+        .then((res) => {
+          if (res.data?.token && res.data?.user) {
+            loginWithToken(res.data.user, res.data.token);
+            if (res.data.user.role === 'admin') {
+              navigate('/admin/users', { replace: true });
+            } else {
+              navigate('/dashboard-fy', { replace: true });
+            }
+          }
+        })
+        .catch((err) => {
+          setError(err.response?.data?.detail || 'Failed to complete OAuth security exchange.');
+        })
+        .finally(() => {
+          setMsLoading(false);
+        });
+    } else if (token && userStr) {
       try {
         let userObj;
         try {
