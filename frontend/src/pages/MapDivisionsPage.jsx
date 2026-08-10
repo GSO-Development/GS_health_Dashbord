@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   Network, Search, Plus, Eye, Edit2, Trash2, 
-  CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, AlertTriangle, Database, Calendar
+  CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, AlertTriangle, Database, Calendar, Package
 } from 'lucide-react';
 import api from '../services/api';
 
