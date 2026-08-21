@@ -545,6 +545,12 @@ def get_distri_range_fy(
         """)
         tb_items = cursor.fetchall()
 
+        # Helper to compute safe percentage
+        def calc_pct(act, tgt):
+            if tgt and tgt > 0:
+                return round((act / tgt) * 100, 1)
+            return 0.0
+
         # Build hierarchy tree
         divisions = {}
         for row in tb_items:
@@ -569,6 +575,20 @@ def get_distri_range_fy(
             item_obj = {
                 "part_no": pno,
                 "product_sku": psku,
+                # New standard keys
+                "p_tgt": round(item_pri_tgt, 2),
+                "p_act": round(item_pri_act, 2),
+                "p_pct": calc_pct(item_pri_act, item_pri_tgt),
+                "rd_tgt": round(item_rd_tgt, 2),
+                "rd_act": round(item_rd_act, 2),
+                "rd_pct": calc_pct(item_rd_act, item_rd_tgt),
+                "c_p_tgt": round(item_c_pri_tgt, 2),
+                "c_p_act": round(item_c_pri_act, 2),
+                "c_p_pct": calc_pct(item_c_pri_act, item_c_pri_tgt),
+                "c_rd_tgt": round(item_c_rd_tgt, 2),
+                "c_rd_act": round(item_c_rd_act, 2),
+                "c_rd_pct": calc_pct(item_c_rd_act, item_c_rd_tgt),
+                # Legacy alias keys for backward compatibility
                 "pri_target": round(item_pri_tgt, 2),
                 "pri_actual": round(item_pri_act, 2),
                 "rd_target": round(item_rd_tgt, 2),
@@ -595,18 +615,31 @@ def get_distri_range_fy(
             sub_list = []
 
             for sub_name, items in subs.items():
-                s_pri_tgt = sum(i['pri_target'] for i in items)
-                s_pri_act = sum(i['pri_actual'] for i in items)
-                s_rd_tgt = sum(i['rd_target'] for i in items)
-                s_rd_act = sum(i['rd_actual'] for i in items)
+                s_pri_tgt = sum(i['p_tgt'] for i in items)
+                s_pri_act = sum(i['p_act'] for i in items)
+                s_rd_tgt = sum(i['rd_tgt'] for i in items)
+                s_rd_act = sum(i['rd_act'] for i in items)
 
-                s_c_pri_tgt = sum(i['c_pri_target'] for i in items)
-                s_c_pri_act = sum(i['c_pri_actual'] for i in items)
-                s_c_rd_tgt = sum(i['c_rd_target'] for i in items)
-                s_c_rd_act = sum(i['c_rd_actual'] for i in items)
+                s_c_pri_tgt = sum(i['c_p_tgt'] for i in items)
+                s_c_pri_act = sum(i['c_p_act'] for i in items)
+                s_c_rd_tgt = sum(i['c_rd_tgt'] for i in items)
+                s_c_rd_act = sum(i['c_rd_act'] for i in items)
 
                 sub_list.append({
                     "subgroup_name": sub_name,
+                    "p_tgt": round(s_pri_tgt, 2),
+                    "p_act": round(s_pri_act, 2),
+                    "p_pct": calc_pct(s_pri_act, s_pri_tgt),
+                    "rd_tgt": round(s_rd_tgt, 2),
+                    "rd_act": round(s_rd_act, 2),
+                    "rd_pct": calc_pct(s_rd_act, s_rd_tgt),
+                    "c_p_tgt": round(s_c_pri_tgt, 2),
+                    "c_p_act": round(s_c_pri_act, 2),
+                    "c_p_pct": calc_pct(s_c_pri_act, s_c_pri_tgt),
+                    "c_rd_tgt": round(s_c_rd_tgt, 2),
+                    "c_rd_act": round(s_c_rd_act, 2),
+                    "c_rd_pct": calc_pct(s_c_rd_act, s_c_rd_tgt),
+                    # Legacy alias keys
                     "pri_target": round(s_pri_tgt, 2),
                     "pri_actual": round(s_pri_act, 2),
                     "rd_target": round(s_rd_tgt, 2),
@@ -630,6 +663,19 @@ def get_distri_range_fy(
 
             tree.append({
                 "division_name": div_name,
+                "p_tgt": round(div_pri_tgt, 2),
+                "p_act": round(div_pri_act, 2),
+                "p_pct": calc_pct(div_pri_act, div_pri_tgt),
+                "rd_tgt": round(div_rd_tgt, 2),
+                "rd_act": round(div_rd_act, 2),
+                "rd_pct": calc_pct(div_rd_act, div_rd_tgt),
+                "c_p_tgt": round(div_c_pri_tgt, 2),
+                "c_p_act": round(div_c_pri_act, 2),
+                "c_p_pct": calc_pct(div_c_pri_act, div_c_pri_tgt),
+                "c_rd_tgt": round(div_c_rd_tgt, 2),
+                "c_rd_act": round(div_c_rd_act, 2),
+                "c_rd_pct": calc_pct(div_c_rd_act, div_c_rd_tgt),
+                # Legacy alias keys
                 "pri_target": round(div_pri_tgt, 2),
                 "pri_actual": round(div_pri_act, 2),
                 "rd_target": round(div_rd_tgt, 2),
@@ -660,6 +706,19 @@ def get_distri_range_fy(
         "selected_date": filter_date,
         "month_label": label_text,
         "grand_total": {
+            "p_tgt": round(g_pri_tgt, 2),
+            "p_act": round(g_pri_act, 2),
+            "p_pct": calc_pct(g_pri_act, g_pri_tgt),
+            "rd_tgt": round(g_rd_tgt, 2),
+            "rd_act": round(g_rd_act, 2),
+            "rd_pct": calc_pct(g_rd_act, g_rd_tgt),
+            "c_p_tgt": round(g_c_pri_tgt, 2),
+            "c_p_act": round(g_c_pri_act, 2),
+            "c_p_pct": calc_pct(g_c_pri_act, g_c_pri_tgt),
+            "c_rd_tgt": round(g_c_rd_tgt, 2),
+            "c_rd_act": round(g_c_rd_act, 2),
+            "c_rd_pct": calc_pct(g_c_rd_act, g_c_rd_tgt),
+            # Legacy alias keys
             "pri_target": round(g_pri_tgt, 2),
             "pri_actual": round(g_pri_act, 2),
             "rd_target": round(g_rd_tgt, 2),
