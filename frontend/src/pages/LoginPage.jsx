@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, ShieldCheck, ArrowRight, AlertCircle, Loader, KeyRound } from 'lucide-react';
+import { Lock, User, ShieldCheck, ArrowRight, AlertCircle, Loader, KeyRound, Eye, EyeOff } from 'lucide-react';
 import GshLogo from '../components/GshLogo';
 import api from '../services/api';
 
@@ -14,6 +14,7 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [msLoading, setMsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Check for Microsoft OAuth Callback Query Parameters in URL
   useEffect(() => {
@@ -224,13 +225,13 @@ const LoginPage = () => {
             <div style={{ position: 'relative' }}>
               <Lock style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: '#64748b' }} />
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="Enter password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{
                   width: '100%',
-                  padding: '0.65rem 0.85rem 0.65rem 2.4rem',
+                  padding: '0.65rem 2.5rem 0.65rem 2.4rem',
                   background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.15)',
                   borderRadius: '10px',
@@ -240,6 +241,32 @@ const LoginPage = () => {
                   boxSizing: 'border-box'
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? 'Hide password' : 'Show password'}
+                style={{
+                  position: 'absolute',
+                  right: '0.85rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: showPassword ? '#90caf9' : '#64748b',
+                  transition: 'color 0.2s ease'
+                }}
+              >
+                {showPassword ? (
+                  <EyeOff style={{ width: '16px', height: '16px' }} />
+                ) : (
+                  <Eye style={{ width: '16px', height: '16px' }} />
+                )}
+              </button>
             </div>
           </div>
 
