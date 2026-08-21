@@ -58,7 +58,7 @@ const UploadAxientaDataPage = () => {
       const res = await api.post('/axienta/sync-data', {
         year: selectedYear,
         month: selectedMonthNum
-      });
+      }, { timeout: 180000 });
       if (res.data && res.data.success) {
         showToast(res.data.message || `Synced successfully!`, 'success');
         loadCalendarSummary();
@@ -252,40 +252,46 @@ const UploadAxientaDataPage = () => {
             <RefreshCw style={{ width: '14px', height: '14px' }} />
           </button>
 
-          <button
-            onClick={handleSyncData}
-            disabled={syncing}
-            title="Sync Axienta Data from MS SQL Server (172.16.0.21)"
-            style={{
-              padding: '0.45rem 1rem',
-              borderRadius: 'var(--radius-xs)',
-              border: 'none',
-              background: syncing ? '#64748b' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: '0.82rem',
-              cursor: syncing ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              boxShadow: syncing ? 'none' : '0 2px 10px rgba(14,165,233,0.35)',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {syncing ? (
-              <>
-                <Loader style={{ width: '14px', height: '14px', animation: 'spin 1s linear infinite' }} />
-                Syncing...
-              </>
-            ) : (
-              <>
-                <Database style={{ width: '14px', height: '14px' }} />
-                Sync Axienta Data
-              </>
-            )}
-          </button>
         </div>
+      </div>
+
+      {/* Sync Axienta Data button - Right-aligned below header */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={handleSyncData}
+          disabled={syncing}
+          title="Sync Axienta Data from MS SQL Server (172.16.0.21)"
+          style={{
+            padding: '0.55rem 1.25rem',
+            borderRadius: 'var(--radius-xs)',
+            border: 'none',
+            background: syncing ? '#64748b' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+            color: '#ffffff',
+            fontWeight: 800,
+            fontSize: '0.84rem',
+            cursor: syncing ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            boxShadow: syncing ? 'none' : '0 3px 12px rgba(14,165,233,0.4)',
+            transition: 'all 0.2s ease',
+            whiteSpace: 'nowrap'
+          }}
+          onMouseEnter={e => { if (!syncing) { e.currentTarget.style.background = 'linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%)'; e.currentTarget.style.transform = 'translateY(-1px)'; } }}
+          onMouseLeave={e => { if (!syncing) { e.currentTarget.style.background = 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)'; e.currentTarget.style.transform = 'translateY(0)'; } }}
+        >
+          {syncing ? (
+            <>
+              <Loader style={{ width: '15px', height: '15px', animation: 'spin 1s linear infinite' }} />
+              Syncing... (this may take up to 60s)
+            </>
+          ) : (
+            <>
+              <Database style={{ width: '15px', height: '15px' }} />
+              Sync Axienta Data
+            </>
+          )}
+        </button>
       </div>
 
       {/* Top Monthly Summary KPI Bar */}
