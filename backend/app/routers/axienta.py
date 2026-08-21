@@ -10,18 +10,155 @@ from app.core.database import get_db_connection
 
 router = APIRouter(prefix="/api/axienta", tags=["Axienta Data"])
 
+MSSQL_SERVER = "172.16.0.21"
+MSSQL_USER = "readuser"
+MSSQL_PASSWORD = "5tgb%TGB"
+MSSQL_DB = "GSH"
+
+MSSQL_QUERY_TEMPLATE = """
+SELECT T.Distributor AS DistribuotrName,
+       T.DistributorID, T.Region, T.Territory, T.ID, T.SerialNo,
+       T.InvDate AS Date,
+       DATEPART(yyyy, T.InvDate) AS Year, DATEPART(mm, T.InvDate) AS Month, DATEPART(dd, T.InvDate) AS Day,
+       T.Outlet, T.OutletID, T.OutletType, T.OutletGroup, T.ProductGroup, T.SalesRepID,
+       T.Agent, T.ASMName, T.Route,
+       T.Category1 AS ItemCategory01, T.Category2 AS ItemCategory02,
+       T.Category3 AS ItemCategory03, T.Category4 AS ItemCategory04, T.Category5 AS ItemCategory05,
+       T.ItemID, T.Item, T.Team, T.Reason, T.SalesOrgName, T.UnitsPerBulk1Pack,
+       T.Cases, T.Units, T.TotalUnits, T.FreeCases, T.FreeUnits, T.TotalFreeUnits,
+       T.Tonnage, T.Price, T.GrossValue, T.LineDisc, T.AdditionalDisc, T.NetValue,
+       T.Discount, T.GroupDiscPart, T.AddiLineDisc, T.AddiGroupDisc, T.CompanyLineDisc,
+       T.Town, T.Area, T.BusinessArea, T.TypeTxn, T.LineType, T.OutletBusinessType, T.Type,
+       T.AgencyName, T.InvoiceType, T.RepType, T.PaymentMode, T.OrderType, T.SubmittedDate,
+       T.FreeTonnage, T.EntryNumber, T.AgentID, T.OutletClass, T.CallID, T.TotalDiscount,
+       T.SalesModel, T.InvoiceRefId,
+       IIF(O.IsActive = 1, 'Active', 'Inactive') AS OutletStatus
+FROM SalesAndReturns_RPT T WITH (NOLOCK)
+    INNER JOIN dbo.Outlet O ON O.ID = T.OutletID AND O.BusinessChannelUID = T.BusinessChannelUID
+WHERE T.BusinessChannelUID = 3 AND T.InvDate >= '{START_DATE}' AND T.InvDate <= '{END_DATE}';
+"""
+
+INSERT_SYNC_SQL = """
+INSERT INTO axienta_sales_sync (
+    distributor_name, distributor_id, region, territory, txn_id, serial_no, inv_date, inv_year, inv_month, inv_day,
+    outlet, outlet_id, outlet_type, outlet_group, product_group, sales_rep_id, agent, asm_name, route,
+    category1, category2, category3, category4, category5, item_id, item_name, team, reason, sales_org_name,
+    units_per_bulk_pack, cases, units, total_units, free_cases, free_units, total_free_units, tonnage, price,
+    gross_value, line_disc, additional_disc, net_value, discount, group_disc_part, addi_line_disc, addi_group_disc,
+    company_line_disc, town, area, business_area, type_txn, line_type, outlet_business_type, type, agency_name,
+    invoice_type, rep_type, payment_mode, order_type, submitted_date, free_tonnage, entry_number, agent_id,
+    outlet_class, call_id, total_discount, sales_model, invoice_ref_id, outlet_status
+) VALUES (
+    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+);
+"""
+
+INSERT_DATA_SQL = """
+INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
+VALUES (%s, %s, %s, %s, %s);
+"""
+
+def fetch_mssql_rows(start_date: str, end_date: str):
+    # Strict validation of date format to prevent SQL injection
+    if not (re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', start_date) and re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', end_date)):
+        raise HTTPException(status_code=400, detail="Invalid date parameters.")
+
+    sql_query = MSSQL_QUERY_TEMPLATE.format(START_DATE=start_date, END_DATE=end_date)
+
+    try:
+        ms_conn = pymssql.connect(
+            server=MSSQL_SERVER, user=MSSQL_USER, password=MSSQL_PASSWORD,
+            database=MSSQL_DB, login_timeout=15
+        )
+        ms_cursor = ms_conn.cursor(as_dict=True)
+        ms_cursor.execute(sql_query)
+        rows = ms_cursor.fetchall()
+        ms_conn.close()
+        return rows
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect or fetch from MS SQL Server (172.16.0.21): {str(e)}"
+        )
+
+def process_and_save_sync_data(rows, delete_year=None, delete_month=None, delete_date_str=None):
+    sync_tuples = []
+    data_tuples = []
+    for r in rows:
+        inv_dt = r.get("Date")
+        inv_date_str = inv_dt.strftime("%Y-%m-%d") if isinstance(inv_dt, datetime) else str(inv_dt)[:10] if inv_dt else None
+        submitted_dt = r.get("SubmittedDate")
+
+        sync_tuples.append((
+            r.get("DistribuotrName"), r.get("DistributorID"), r.get("Region"), r.get("Territory"),
+            r.get("ID"), r.get("SerialNo"), inv_dt, r.get("Year"), r.get("Month"), r.get("Day"),
+            r.get("Outlet"), r.get("OutletID"), r.get("OutletType"), r.get("OutletGroup"),
+            r.get("ProductGroup"), r.get("SalesRepID"), r.get("Agent"), r.get("ASMName"), r.get("Route"),
+            r.get("ItemCategory01"), r.get("ItemCategory02"), r.get("ItemCategory03"),
+            r.get("ItemCategory04"), r.get("ItemCategory05"), r.get("ItemID"), r.get("Item"),
+            r.get("Team"), r.get("Reason"), r.get("SalesOrgName"),
+            r.get("UnitsPerBulk1Pack") or 0, r.get("Cases") or 0,
+            float(r.get("Units") or 0), float(r.get("TotalUnits") or 0),
+            r.get("FreeCases") or 0, float(r.get("FreeUnits") or 0),
+            float(r.get("TotalFreeUnits") or 0), float(r.get("Tonnage") or 0),
+            float(r.get("Price") or 0), float(r.get("GrossValue") or 0),
+            float(r.get("LineDisc") or 0), float(r.get("AdditionalDisc") or 0),
+            float(r.get("NetValue") or 0), float(r.get("Discount") or 0),
+            float(r.get("GroupDiscPart") or 0), float(r.get("AddiLineDisc") or 0),
+            float(r.get("AddiGroupDisc") or 0), float(r.get("CompanyLineDisc") or 0),
+            r.get("Town"), r.get("Area"), r.get("BusinessArea"), r.get("TypeTxn"),
+            r.get("LineType"), r.get("OutletBusinessType"), r.get("Type"), r.get("AgencyName"),
+            r.get("InvoiceType"), r.get("RepType"), r.get("PaymentMode"), r.get("OrderType"),
+            submitted_dt, float(r.get("FreeTonnage") or 0), r.get("EntryNumber"), r.get("AgentID"),
+            r.get("OutletClass"), r.get("CallID"), float(r.get("TotalDiscount") or 0),
+            r.get("SalesModel"), r.get("InvoiceRefId"), r.get("OutletStatus")
+        ))
+
+        data_tuples.append((
+            inv_date_str,
+            r.get("ItemID") or "",
+            r.get("Item") or "",
+            float(r.get("TotalUnits") or 0),
+            float(r.get("NetValue") or 0)
+        ))
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            if delete_date_str:
+                # Single day replacement using indexed range
+                cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_date >= %s AND inv_date <= %s;", (f"{delete_date_str} 00:00:00", f"{delete_date_str} 23:59:59"))
+                cursor.execute("DELETE FROM axienta_data WHERE entry_date = %s;", (delete_date_str,))
+            elif delete_year and delete_month:
+                # Month-level replacement
+                cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_year = %s AND inv_month = %s;", (delete_year, delete_month))
+                cursor.execute("DELETE FROM axienta_data WHERE YEAR(entry_date) = %s AND MONTH(entry_date) = %s;", (delete_year, delete_month))
+
+            # Batch insert in chunks of 5000
+            chunk_size = 5000
+            for i in range(0, len(sync_tuples), chunk_size):
+                cursor.executemany(INSERT_SYNC_SQL, sync_tuples[i:i+chunk_size])
+                cursor.executemany(INSERT_DATA_SQL, data_tuples[i:i+chunk_size])
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database insert error: {str(e)}")
+    finally:
+        conn.close()
+
+    return len(sync_tuples)
+
 def parse_axienta_number(val) -> float:
     if val is None or pd.isna(val):
         return 0.0
     s = str(val).strip()
     if not s or s.lower() == 'nan':
         return 0.0
-    
     if '/' in s:
         s = s.split('/')[0].strip()
-    
     s = s.replace(',', '').replace('LKR', '').replace('$', '').strip()
-
     try:
         return float(s)
     except ValueError:
@@ -87,8 +224,8 @@ def get_daily_records(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500)
 ):
-    page_num = int(page) if str(page).isdigit() else 1
-    limit_num = int(limit) if str(limit).isdigit() else 50
+    page_num = max(1, page)
+    limit_num = max(1, min(limit, 500))
     offset = (page_num - 1) * limit_num
 
     conn = get_db_connection()
@@ -96,7 +233,7 @@ def get_daily_records(
         cursor.execute("SELECT COUNT(*) as cnt, COALESCE(SUM(value), 0) as tot_val FROM axienta_data WHERE entry_date = %s;", (entry_date,))
         agg = cursor.fetchone()
         total_count = agg['cnt']
-        total_value = round(agg['tot_val'], 2)
+        total_value = round(float(agg['tot_val']), 2)
 
         cursor.execute("SELECT * FROM axienta_data WHERE entry_date = %s ORDER BY id ASC LIMIT %s OFFSET %s;", (entry_date, limit_num, offset))
         rows = cursor.fetchall()
@@ -119,10 +256,7 @@ def get_daily_records(
 
 @router.post("/sync-data")
 def sync_axienta_mssql_data(payload: dict = Body(...)):
-    """
-    Sync Axienta Sales & Returns data directly from MS SQL Server (172.16.0.21 DB: GSH).
-    Query parameters in payload: year (int), month (int)
-    """
+    """Sync whole month data from MS SQL Server (172.16.0.21 DB: GSH)."""
     year = int(payload.get("year", 2026))
     month = int(payload.get("month", 5))
 
@@ -130,103 +264,7 @@ def sync_axienta_mssql_data(payload: dict = Body(...)):
     last_day = calendar.monthrange(year, month)[1]
     end_date = f"{year:04d}-{month:02d}-{last_day:02d} 23:59:59"
 
-    mssql_sql = """
-    SELECT T.Distributor AS DistribuotrName,
-           T.DistributorID,
-           T.Region,
-           T.Territory,
-           T.ID,
-           T.SerialNo,
-           T.InvDate AS Date,
-           DATEPART(yyyy, T.InvDate) AS Year,
-           DATEPART(mm, T.InvDate) AS Month,
-           DATEPART(dd, T.InvDate) AS Day,
-           T.Outlet,
-           T.OutletID,
-           T.OutletType,
-           T.OutletGroup,
-           T.ProductGroup,
-           T.SalesRepID,
-           T.Agent,
-           T.ASMName,
-           T.Route,
-           T.Category1 AS ItemCategory01,
-           T.Category2 AS ItemCategory02,
-           T.Category3 AS ItemCategory03,
-           T.Category4 AS ItemCategory04,
-           T.Category5 AS ItemCategory05,
-           T.ItemID,
-           T.Item,
-           T.Team,
-           T.Reason,
-           T.SalesOrgName,
-           T.UnitsPerBulk1Pack,
-           T.Cases,
-           T.Units,
-           T.TotalUnits,
-           T.FreeCases,
-           T.FreeUnits,
-           T.TotalFreeUnits,
-           T.Tonnage,
-           T.Price,
-           T.GrossValue,
-           T.LineDisc,
-           T.AdditionalDisc,
-           T.NetValue,
-           T.Discount,
-           T.GroupDiscPart,
-           T.AddiLineDisc,
-           T.AddiGroupDisc,
-           T.CompanyLineDisc,
-           T.Town,
-           T.Area,
-           T.BusinessArea,
-           T.TypeTxn,
-           T.LineType,
-           T.OutletBusinessType,
-           T.Type,
-           T.AgencyName,
-           T.InvoiceType,
-           T.RepType,
-           T.PaymentMode,
-           T.OrderType,
-           T.SubmittedDate,
-           T.FreeTonnage,
-           T.EntryNumber,
-           T.AgentID,
-           T.OutletClass,
-           T.CallID,
-           T.TotalDiscount,
-           T.SalesModel,
-           T.InvoiceRefId,
-           IIF(O.IsActive = 1, 'Active', 'Inactive') AS OutletStatus
-    FROM SalesAndReturns_RPT T WITH (NOLOCK)
-        INNER JOIN dbo.Outlet O
-            ON O.ID = T.OutletID
-               AND O.BusinessChannelUID = T.BusinessChannelUID
-    WHERE T.BusinessChannelUID = 3
-          AND T.InvDate >= %s
-          AND T.InvDate <= %s;
-    """
-
-    try:
-        ms_conn = pymssql.connect(
-            server="172.16.0.21",
-            user="readuser",
-            password="5tgb%TGB",
-            database="GSH",
-            login_timeout=15
-        )
-        ms_cursor = ms_conn.cursor(as_dict=True)
-        ms_cursor.execute(mssql_sql, (start_date, end_date))
-        rows = ms_cursor.fetchall()
-        ms_conn.close()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch data from MS SQL Server (172.16.0.21): {str(e)}"
-        )
-
+    rows = fetch_mssql_rows(start_date, end_date)
     if not rows:
         return {
             "success": True,
@@ -234,84 +272,42 @@ def sync_axienta_mssql_data(payload: dict = Body(...)):
             "synced_count": 0
         }
 
-    conn = get_db_connection()
-    synced_count = 0
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_year = %s AND inv_month = %s;", (year, month))
-            cursor.execute("DELETE FROM axienta_data WHERE YEAR(entry_date) = %s AND MONTH(entry_date) = %s;", (year, month))
-
-            insert_sync_sql = """
-            INSERT INTO axienta_sales_sync (
-                distributor_name, distributor_id, region, territory, txn_id, serial_no, inv_date, inv_year, inv_month, inv_day,
-                outlet, outlet_id, outlet_type, outlet_group, product_group, sales_rep_id, agent, asm_name, route,
-                category1, category2, category3, category4, category5, item_id, item_name, team, reason, sales_org_name,
-                units_per_bulk_pack, cases, units, total_units, free_cases, free_units, total_free_units, tonnage, price,
-                gross_value, line_disc, additional_disc, net_value, discount, group_disc_part, addi_line_disc, addi_group_disc,
-                company_line_disc, town, area, business_area, type_txn, line_type, outlet_business_type, type, agency_name,
-                invoice_type, rep_type, payment_mode, order_type, submitted_date, free_tonnage, entry_number, agent_id,
-                outlet_class, call_id, total_discount, sales_model, invoice_ref_id, outlet_status
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s
-            )
-            """
-
-            insert_data_sql = """
-            INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
-            VALUES (%s, %s, %s, %s, %s)
-            """
-
-            sync_tuples = []
-            data_tuples = []
-
-            for r in rows:
-                inv_dt = r.get("Date")
-                inv_date_str = inv_dt.strftime("%Y-%m-%d") if isinstance(inv_dt, datetime) else str(inv_dt)[:10] if inv_dt else None
-                submitted_dt = r.get("SubmittedDate")
-
-                sync_tuples.append((
-                    r.get("DistribuotrName"), r.get("DistributorID"), r.get("Region"), r.get("Territory"), r.get("ID"), r.get("SerialNo"), inv_dt, r.get("Year"), r.get("Month"), r.get("Day"),
-                    r.get("Outlet"), r.get("OutletID"), r.get("OutletType"), r.get("OutletGroup"), r.get("ProductGroup"), r.get("SalesRepID"), r.get("Agent"), r.get("ASMName"), r.get("Route"),
-                    r.get("ItemCategory01"), r.get("ItemCategory02"), r.get("ItemCategory03"), r.get("ItemCategory04"), r.get("ItemCategory05"), r.get("ItemID"), r.get("Item"), r.get("Team"), r.get("Reason"), r.get("SalesOrgName"),
-                    r.get("UnitsPerBulk1Pack") or 0, r.get("Cases") or 0, float(r.get("Units") or 0), float(r.get("TotalUnits") or 0), r.get("FreeCases") or 0, float(r.get("FreeUnits") or 0), float(r.get("TotalFreeUnits") or 0), float(r.get("Tonnage") or 0), float(r.get("Price") or 0),
-                    float(r.get("GrossValue") or 0), float(r.get("LineDisc") or 0), float(r.get("AdditionalDisc") or 0), float(r.get("NetValue") or 0), float(r.get("Discount") or 0), float(r.get("GroupDiscPart") or 0), float(r.get("AddiLineDisc") or 0), float(r.get("AddiGroupDisc") or 0),
-                    float(r.get("CompanyLineDisc") or 0), r.get("Town"), r.get("Area"), r.get("BusinessArea"), r.get("TypeTxn"), r.get("LineType"), r.get("OutletBusinessType"), r.get("Type"), r.get("AgencyName"),
-                    r.get("InvoiceType"), r.get("RepType"), r.get("PaymentMode"), r.get("OrderType"), submitted_dt, float(r.get("FreeTonnage") or 0), r.get("EntryNumber"), r.get("AgentID"),
-                    r.get("OutletClass"), r.get("CallID"), float(r.get("TotalDiscount") or 0), r.get("SalesModel"), r.get("InvoiceRefId"), r.get("OutletStatus")
-                ))
-
-                data_tuples.append((
-                    inv_date_str,
-                    r.get("ItemID") or "",
-                    r.get("Item") or "",
-                    float(r.get("TotalUnits") or 0),
-                    float(r.get("NetValue") or 0)
-                ))
-
-            chunk_size = 5000
-            for i in range(0, len(sync_tuples), chunk_size):
-                cursor.executemany(insert_sync_sql, sync_tuples[i:i+chunk_size])
-                cursor.executemany(insert_data_sql, data_tuples[i:i+chunk_size])
-
-            conn.commit()
-            synced_count = len(sync_tuples)
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database insert error: {str(e)}")
-    finally:
-        conn.close()
+    synced_count = process_and_save_sync_data(rows, delete_year=year, delete_month=month)
 
     return {
         "success": True,
-        "message": f"Successfully synced {synced_count:,} Axienta records from MS SQL Server for {year}-{month:02d}!",
+        "message": f"Successfully synced {synced_count:,} Axienta records for {year}-{month:02d}!",
         "synced_count": synced_count
+    }
+
+
+@router.post("/sync-day")
+def sync_axienta_single_day(payload: dict = Body(...)):
+    """Sync a single specific date from MS SQL Server (172.16.0.21 DB: GSH)."""
+    year = int(payload.get("year", 2026))
+    month = int(payload.get("month", 5))
+    day = int(payload.get("day", 1))
+
+    date_str = f"{year:04d}-{month:02d}-{day:02d}"
+    start_date = f"{date_str} 00:00:00"
+    end_date = f"{date_str} 23:59:59"
+
+    rows = fetch_mssql_rows(start_date, end_date)
+    if not rows:
+        return {
+            "success": True,
+            "message": f"No Axienta records found in MS SQL Server for date {date_str}",
+            "synced_count": 0,
+            "date": date_str
+        }
+
+    synced_count = process_and_save_sync_data(rows, delete_date_str=date_str)
+
+    return {
+        "success": True,
+        "message": f"Successfully synced {synced_count:,} Axienta records for {date_str}!",
+        "synced_count": synced_count,
+        "date": date_str
     }
 
 

@@ -43,6 +43,7 @@ const UploadAxientaDataPage = () => {
 
   // Sync State
   const [syncing, setSyncing] = useState(false);
+  const [syncingDay, setSyncingDay] = useState(null); // 'YYYY-MM-DD' or null
 
   // Toast Notification State
   const [toast, setToast] = useState(null);
@@ -68,6 +69,27 @@ const UploadAxientaDataPage = () => {
       showToast(errMsg, 'error');
     }
     setSyncing(false);
+  };
+
+  const handleSyncDay = async (dateStr, e) => {
+    e.stopPropagation(); // Prevent opening the day modal
+    const [y, m, d] = dateStr.split('-').map(Number);
+    setSyncingDay(dateStr);
+    try {
+      const res = await api.post('/axienta/sync-day', {
+        year: y,
+        month: m,
+        day: d
+      }, { timeout: 60000 });
+      if (res.data && res.data.success) {
+        showToast(res.data.message || `Synced ${dateStr} successfully!`, 'success');
+        loadCalendarSummary();
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.detail || `Failed to sync data for ${dateStr} from MS SQL Server.`;
+      showToast(errMsg, 'error');
+    }
+    setSyncingDay(null);
   };
 
   const loadCalendarSummary = async () => {
@@ -381,11 +403,46 @@ const UploadAxientaDataPage = () => {
                   <span style={{ fontSize: '1rem', fontWeight: 800, color: hasData ? 'var(--gsh-teal)' : 'var(--text-main)' }}>
                     {cell.dayNum}
                   </span>
-                  {hasData && (
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, background: 'var(--gsh-teal)', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
-                      Uploaded
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {hasData && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, background: 'var(--gsh-teal)', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                        Uploaded
+                      </span>
+                    )}
+                    {/* Per-Day Sync Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleSyncDay(cell.dateStr, e)}
+                      disabled={syncingDay === cell.dateStr || syncing}
+                      title={`Sync ${cell.dateStr} from MS SQL Server (172.16.0.21)`}
+                      style={{
+                        background: syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)',
+                        border: '1px solid rgba(14, 165, 233, 0.3)',
+                        borderRadius: '4px',
+                        padding: '0.15rem 0.3rem',
+                        cursor: (syncingDay === cell.dateStr || syncing) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(14, 165, 233, 0.25)';
+                        e.currentTarget.style.color = '#0ea5e9';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)';
+                        e.currentTarget.style.color = syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)';
+                      }}
+                    >
+                      {syncingDay === cell.dateStr ? (
+                        <Loader style={{ width: '11px', height: '11px', animation: 'spin 1s linear infinite' }} />
+                      ) : (
+                        <RefreshCw style={{ width: '11px', height: '11px' }} />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Day Summary Highlights */}
