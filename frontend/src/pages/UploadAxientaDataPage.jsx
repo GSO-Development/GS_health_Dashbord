@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Layers, DollarSign, X, AlertCircle, ChevronLeft, ChevronRight, Package, Box } from 'lucide-react';
+import { Calendar, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Layers, DollarSign, X, AlertCircle, ChevronLeft, ChevronRight, Package, Box, Database, Loader } from 'lucide-react';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -41,12 +41,33 @@ const UploadAxientaDataPage = () => {
   const [uploading, setUploading] = useState(false);
   const [overwritePrompt, setOverwritePrompt] = useState(null);
 
+  // Sync State
+  const [syncing, setSyncing] = useState(false);
+
   // Toast Notification State
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleSyncData = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.post('/axienta/sync-data', {
+        year: selectedYear,
+        month: selectedMonthNum
+      });
+      if (res.data && res.data.success) {
+        showToast(res.data.message || `Synced successfully!`, 'success');
+        loadCalendarSummary();
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.detail || 'Failed to sync Axienta data from MS SQL Server.';
+      showToast(errMsg, 'error');
+    }
+    setSyncing(false);
   };
 
   const loadCalendarSummary = async () => {
@@ -229,6 +250,40 @@ const UploadAxientaDataPage = () => {
             style={{ padding: '0.45rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
           >
             <RefreshCw style={{ width: '14px', height: '14px' }} />
+          </button>
+
+          <button
+            onClick={handleSyncData}
+            disabled={syncing}
+            title="Sync Axienta Data from MS SQL Server (172.16.0.21)"
+            style={{
+              padding: '0.45rem 1rem',
+              borderRadius: 'var(--radius-xs)',
+              border: 'none',
+              background: syncing ? '#64748b' : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              cursor: syncing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              boxShadow: syncing ? 'none' : '0 2px 10px rgba(14,165,233,0.35)',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {syncing ? (
+              <>
+                <Loader style={{ width: '14px', height: '14px', animation: 'spin 1s linear infinite' }} />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <Database style={{ width: '14px', height: '14px' }} />
+                Sync Axienta Data
+              </>
+            )}
           </button>
         </div>
       </div>

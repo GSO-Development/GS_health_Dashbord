@@ -1,9 +1,11 @@
 import io
 import re
+import calendar
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status
+from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Body
 import pandas as pd
+import pymssql
 from app.core.database import get_db_connection
 
 router = APIRouter(prefix="/api/axienta", tags=["Axienta Data"])
@@ -15,11 +17,9 @@ def parse_axienta_number(val) -> float:
     if not s or s.lower() == 'nan':
         return 0.0
     
-    # Handle fraction strings like "-1/0.000" or "5391/0.000"
     if '/' in s:
         s = s.split('/')[0].strip()
     
-    # Clean commas and currency symbols
     s = s.replace(',', '').replace('LKR', '').replace('$', '').strip()
 
     try:
@@ -117,6 +117,204 @@ def get_daily_records(
     }
 
 
+@router.post("/sync-data")
+def sync_axienta_mssql_data(payload: dict = Body(...)):
+    """
+    Sync Axienta Sales & Returns data directly from MS SQL Server (172.16.0.21 DB: GSH).
+    Query parameters in payload: year (int), month (int)
+    """
+    year = int(payload.get("year", 2026))
+    month = int(payload.get("month", 5))
+
+    start_date = f"{year:04d}-{month:02d}-01 00:00:00"
+    last_day = calendar.monthrange(year, month)[1]
+    end_date = f"{year:04d}-{month:02d}-{last_day:02d} 23:59:59"
+
+    mssql_sql = """
+    SELECT T.Distributor AS DistribuotrName,
+           T.DistributorID,
+           T.Region,
+           T.Territory,
+           T.ID,
+           T.SerialNo,
+           T.InvDate AS Date,
+           DATEPART(yyyy, T.InvDate) AS Year,
+           DATEPART(mm, T.InvDate) AS Month,
+           DATEPART(dd, T.InvDate) AS Day,
+           T.Outlet,
+           T.OutletID,
+           T.OutletType,
+           T.OutletGroup,
+           T.ProductGroup,
+           T.SalesRepID,
+           T.Agent,
+           T.ASMName,
+           T.Route,
+           T.Category1 AS ItemCategory01,
+           T.Category2 AS ItemCategory02,
+           T.Category3 AS ItemCategory03,
+           T.Category4 AS ItemCategory04,
+           T.Category5 AS ItemCategory05,
+           T.ItemID,
+           T.Item,
+           T.Team,
+           T.Reason,
+           T.SalesOrgName,
+           T.UnitsPerBulk1Pack,
+           T.Cases,
+           T.Units,
+           T.TotalUnits,
+           T.FreeCases,
+           T.FreeUnits,
+           T.TotalFreeUnits,
+           T.Tonnage,
+           T.Price,
+           T.GrossValue,
+           T.LineDisc,
+           T.AdditionalDisc,
+           T.NetValue,
+           T.Discount,
+           T.GroupDiscPart,
+           T.AddiLineDisc,
+           T.AddiGroupDisc,
+           T.CompanyLineDisc,
+           T.Town,
+           T.Area,
+           T.BusinessArea,
+           T.TypeTxn,
+           T.LineType,
+           T.OutletBusinessType,
+           T.Type,
+           T.AgencyName,
+           T.InvoiceType,
+           T.RepType,
+           T.PaymentMode,
+           T.OrderType,
+           T.SubmittedDate,
+           T.FreeTonnage,
+           T.EntryNumber,
+           T.AgentID,
+           T.OutletClass,
+           T.CallID,
+           T.TotalDiscount,
+           T.SalesModel,
+           T.InvoiceRefId,
+           IIF(O.IsActive = 1, 'Active', 'Inactive') AS OutletStatus
+    FROM SalesAndReturns_RPT T WITH (NOLOCK)
+        INNER JOIN dbo.Outlet O
+            ON O.ID = T.OutletID
+               AND O.BusinessChannelUID = T.BusinessChannelUID
+    WHERE T.BusinessChannelUID = 3
+          AND T.InvDate >= %s
+          AND T.InvDate <= %s;
+    """
+
+    try:
+        ms_conn = pymssql.connect(
+            server="172.16.0.21",
+            user="readuser",
+            password="5tgb%TGB",
+            database="GSH",
+            login_timeout=15
+        )
+        ms_cursor = ms_conn.cursor(as_dict=True)
+        ms_cursor.execute(mssql_sql, (start_date, end_date))
+        rows = ms_cursor.fetchall()
+        ms_conn.close()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch data from MS SQL Server (172.16.0.21): {str(e)}"
+        )
+
+    if not rows:
+        return {
+            "success": True,
+            "message": f"No Axienta records found in MS SQL Server for {year}-{month:02d}",
+            "synced_count": 0
+        }
+
+    conn = get_db_connection()
+    synced_count = 0
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_year = %s AND inv_month = %s;", (year, month))
+            cursor.execute("DELETE FROM axienta_data WHERE YEAR(entry_date) = %s AND MONTH(entry_date) = %s;", (year, month))
+
+            insert_sync_sql = """
+            INSERT INTO axienta_sales_sync (
+                distributor_name, distributor_id, region, territory, txn_id, serial_no, inv_date, inv_year, inv_month, inv_day,
+                outlet, outlet_id, outlet_type, outlet_group, product_group, sales_rep_id, agent, asm_name, route,
+                category1, category2, category3, category4, category5, item_id, item_name, team, reason, sales_org_name,
+                units_per_bulk_pack, cases, units, total_units, free_cases, free_units, total_free_units, tonnage, price,
+                gross_value, line_disc, additional_disc, net_value, discount, group_disc_part, addi_line_disc, addi_group_disc,
+                company_line_disc, town, area, business_area, type_txn, line_type, outlet_business_type, type, agency_name,
+                invoice_type, rep_type, payment_mode, order_type, submitted_date, free_tonnage, entry_number, agent_id,
+                outlet_class, call_id, total_discount, sales_model, invoice_ref_id, outlet_status
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s
+            )
+            """
+
+            insert_data_sql = """
+            INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+
+            sync_tuples = []
+            data_tuples = []
+
+            for r in rows:
+                inv_dt = r.get("Date")
+                inv_date_str = inv_dt.strftime("%Y-%m-%d") if isinstance(inv_dt, datetime) else str(inv_dt)[:10] if inv_dt else None
+                submitted_dt = r.get("SubmittedDate")
+
+                sync_tuples.append((
+                    r.get("DistribuotrName"), r.get("DistributorID"), r.get("Region"), r.get("Territory"), r.get("ID"), r.get("SerialNo"), inv_dt, r.get("Year"), r.get("Month"), r.get("Day"),
+                    r.get("Outlet"), r.get("OutletID"), r.get("OutletType"), r.get("OutletGroup"), r.get("ProductGroup"), r.get("SalesRepID"), r.get("Agent"), r.get("ASMName"), r.get("Route"),
+                    r.get("ItemCategory01"), r.get("ItemCategory02"), r.get("ItemCategory03"), r.get("ItemCategory04"), r.get("ItemCategory05"), r.get("ItemID"), r.get("Item"), r.get("Team"), r.get("Reason"), r.get("SalesOrgName"),
+                    r.get("UnitsPerBulk1Pack") or 0, r.get("Cases") or 0, float(r.get("Units") or 0), float(r.get("TotalUnits") or 0), r.get("FreeCases") or 0, float(r.get("FreeUnits") or 0), float(r.get("TotalFreeUnits") or 0), float(r.get("Tonnage") or 0), float(r.get("Price") or 0),
+                    float(r.get("GrossValue") or 0), float(r.get("LineDisc") or 0), float(r.get("AdditionalDisc") or 0), float(r.get("NetValue") or 0), float(r.get("Discount") or 0), float(r.get("GroupDiscPart") or 0), float(r.get("AddiLineDisc") or 0), float(r.get("AddiGroupDisc") or 0),
+                    float(r.get("CompanyLineDisc") or 0), r.get("Town"), r.get("Area"), r.get("BusinessArea"), r.get("TypeTxn"), r.get("LineType"), r.get("OutletBusinessType"), r.get("Type"), r.get("AgencyName"),
+                    r.get("InvoiceType"), r.get("RepType"), r.get("PaymentMode"), r.get("OrderType"), submitted_dt, float(r.get("FreeTonnage") or 0), r.get("EntryNumber"), r.get("AgentID"),
+                    r.get("OutletClass"), r.get("CallID"), float(r.get("TotalDiscount") or 0), r.get("SalesModel"), r.get("InvoiceRefId"), r.get("OutletStatus")
+                ))
+
+                data_tuples.append((
+                    inv_date_str,
+                    r.get("ItemID") or "",
+                    r.get("Item") or "",
+                    float(r.get("TotalUnits") or 0),
+                    float(r.get("NetValue") or 0)
+                ))
+
+            chunk_size = 5000
+            for i in range(0, len(sync_tuples), chunk_size):
+                cursor.executemany(insert_sync_sql, sync_tuples[i:i+chunk_size])
+                cursor.executemany(insert_data_sql, data_tuples[i:i+chunk_size])
+
+            conn.commit()
+            synced_count = len(sync_tuples)
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database insert error: {str(e)}")
+    finally:
+        conn.close()
+
+    return {
+        "success": True,
+        "message": f"Successfully synced {synced_count:,} Axienta records from MS SQL Server for {year}-{month:02d}!",
+        "synced_count": synced_count
+    }
+
+
 @router.post("/upload-excel")
 async def upload_axienta_excel(
     file: UploadFile = File(...),
@@ -131,7 +329,6 @@ async def upload_axienta_excel(
 
     try:
         contents = await file.read()
-        # FIX-11: Validate File Magic Bytes (ZIP header for .xlsx or OLE header for .xls)
         is_xlsx = contents.startswith(b'PK\x03\x04')
         is_xls = contents.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1')
         if not (is_xlsx or is_xls):
@@ -154,90 +351,62 @@ async def upload_axienta_excel(
             detail="Uploaded Excel sheet is empty!"
         )
 
-    # Normalize Excel Column Headers (strip whitespace, lowercase)
-    cols = [str(c).strip().lower() for c in df.columns]
-    df.columns = cols
+    col_map = {str(col).strip().lower(): col for col in df.columns}
+    
+    prod_id_col = col_map.get('item id') or col_map.get('itemcode') or col_map.get('product id') or col_map.get('itemid')
+    prod_col = col_map.get('item') or col_map.get('item description') or col_map.get('product') or col_map.get('product name')
+    qty_col = col_map.get('qty') or col_map.get('quantity') or col_map.get('total units') or col_map.get('units')
+    val_col = col_map.get('net value') or col_map.get('gross value') or col_map.get('value') or col_map.get('amount')
 
-    # Smart Flexible Column Detection
-    pid_col = None
-    prod_col = None
-    qty_col = None
-    val_col = None
-
-    for c in cols:
-        c_clean = c.replace("_", " ").replace("-", " ").strip()
-        if not pid_col and any(k in c_clean for k in ['product id', 'prod id', 'part no', 'item code', 'id', 'code']):
-            pid_col = c
-        elif not prod_col and any(k in c_clean for k in ['product', 'description', 'desc', 'item name', 'item']):
-            prod_col = c
-        elif not qty_col and any(k in c_clean for k in ['qty', 'quantity', 'units']):
-            qty_col = c
-        elif not val_col and any(k in c_clean for k in ['value', 'amount', 'val', 'net']):
-            val_col = c
-
-    # Fallback to column index if headers are ordered
-    if not pid_col and len(cols) >= 1:
-        pid_col = cols[0]
-    if not prod_col and len(cols) >= 2:
-        prod_col = cols[1]
-    if not qty_col and len(cols) >= 3:
-        qty_col = cols[2]
-    if not val_col and len(cols) >= 4:
-        val_col = cols[3]
-
-    if not (pid_col and prod_col and qty_col and val_col):
+    if not prod_col or not val_col:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Axienta Excel column validation failed! Expected 4 columns: Product ID, Product, Qty, Value"
+            detail=f"Uploaded sheet must contain at least 'Item' (or Product) and 'Net Value' (or Value) columns. Found columns: {list(df.columns)}"
+        )
+
+    records_to_insert = []
+    for idx, row in df.iterrows():
+        product_name = str(row[prod_col]).strip() if pd.notna(row[prod_col]) else ""
+        if not product_name or product_name.lower() == 'nan':
+            continue
+
+        prod_id = str(row[prod_id_col]).strip() if prod_id_col and pd.notna(row[prod_id_col]) else ""
+        qty_val = parse_axienta_number(row[qty_col]) if qty_col else 0.0
+        val_val = parse_axienta_number(row[val_col])
+
+        records_to_insert.append((entry_date, prod_id, product_name, qty_val, val_val))
+
+    if not records_to_insert:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid product records found in uploaded sheet."
         )
 
     conn = get_db_connection()
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) as cnt FROM axienta_data WHERE entry_date = %s;", (entry_date,))
-        existing_cnt = cursor.fetchone()['cnt']
+    inserted_count = 0
+    try:
+        with conn.cursor() as cursor:
+            if overwrite:
+                cursor.execute("DELETE FROM axienta_data WHERE entry_date = %s;", (entry_date,))
 
-        if existing_cnt > 0 and not overwrite:
-            conn.close()
-            return {
-                "exists": True,
-                "existing_count": existing_cnt,
-                "entry_date": entry_date,
-                "message": f"Axienta data for {entry_date} already exists ({existing_cnt} records). Do you want to replace/overwrite it?"
-            }
-
-        if existing_cnt > 0 and overwrite:
-            cursor.execute("DELETE FROM axienta_data WHERE entry_date = %s;", (entry_date,))
+            cursor.executemany(
+                """
+                INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
+                VALUES (%s, %s, %s, %s, %s);
+                """,
+                records_to_insert
+            )
             conn.commit()
-
-        insert_sql = """
-            INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
-            VALUES (%s, %s, %s, %s, %s)
-        """
-
-        insert_data = []
-        tot_val = 0.0
-
-        for _, row in df.iterrows():
-            p_id = str(row.get(pid_col) or '').strip()
-            p_name = str(row.get(prod_col) or '').strip()
-            qty = parse_axienta_number(row.get(qty_col))
-            val = parse_axienta_number(row.get(val_col))
-            tot_val += val
-
-            # Ignore blank rows
-            if p_id or p_name or qty != 0 or val != 0:
-                insert_data.append((entry_date, p_id, p_name, qty, val))
-
-        if insert_data:
-            cursor.executemany(insert_sql, insert_data)
-            conn.commit()
-
-    conn.close()
+            inserted_count = len(records_to_insert)
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error saving records: {str(e)}")
+    finally:
+        conn.close()
 
     return {
         "success": True,
-        "entry_date": entry_date,
-        "inserted_rows": len(insert_data),
-        "total_value": round(tot_val, 2),
-        "message": f"Successfully uploaded {len(insert_data)} Axienta records for {entry_date} (Total Value: LKR {tot_val:,.2f})!"
+        "message": f"Successfully uploaded {inserted_count} records for {entry_date}!",
+        "count": inserted_count,
+        "entry_date": entry_date
     }
