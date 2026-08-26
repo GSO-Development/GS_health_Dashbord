@@ -1,13 +1,13 @@
 import os
+import time
 import logging
-from fastapi import FastAPI, Request
+from collections import defaultdict
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
 from app.routers import health, reports, seed, budget, dashboard_fy, custom_dashboard, auth, users, division_mappings, prode_ifs, oracle_sync, axienta
-from app.routers.auth import limiter
 
 # Configure logging
 logging.basicConfig(
@@ -28,10 +28,6 @@ app = FastAPI(
     openapi_url=None if is_prod else "/openapi.json"
 )
 
-# Add Rate Limiter State & Handler
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
 # FIX-6: Explicit CORS Whitelist
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://172.16.7.41,http://localhost:5173,http://localhost:3000")
 allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
@@ -44,13 +40,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# FIX-8: Custom IP Rate Limiter (5 requests/minute for login)
+_login_attempts = defaultdict(list)
+
 # FIX-15 & FIX-16: Security Headers and Audit Logging Middleware
 @app.middleware("http")
-async def security_and_audit_middleware(request: Request, call_next):
-    # Log incoming requests for security auditing
+async def security_and_rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
-    auth_logger = logging.getLogger("gsh.audit")
     
+    # Rate Limit Check for POST /api/auth/login
+    if request.url.path == "/api/auth/login" and request.method == "POST":
+        now = time.time()
+        # Clean timestamps older than 60 seconds
+        _login_attempts[client_ip] = [t for t in _login_attempts[client_ip] if now - t < 60]
+        if len(_login_attempts[client_ip]) >= 5:
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": "Too many login attempts. Please try again in a minute."}
+            )
+        _login_attempts[client_ip].append(now)
+
     response = await call_next(request)
     
     # Add Security Headers

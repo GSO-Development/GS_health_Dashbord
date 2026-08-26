@@ -5,7 +5,10 @@ from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Body
 import pandas as pd
-import pymssql
+try:
+    import pymssql
+except ImportError:
+    pymssql = None
 from app.core.database import get_db_connection
 
 router = APIRouter(prefix="/api/axienta", tags=["Axienta Data"])

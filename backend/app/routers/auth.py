@@ -2,7 +2,7 @@
 auth.py — Authentication router (security-hardened)
 
 Security fixes applied:
-- FIX-1: JWT tokens (python-jose HS256) replace forged gsh_token_ strings
+- FIX-1: JWT tokens (PyJWT HS256) replace forged gsh_token_ strings
 - FIX-2: Azure secrets loaded from .env only (no hardcoded fallbacks)
 - FIX-4: Login query uses bcrypt verify — no plaintext password fallback
 - FIX-5: bcrypt replaces SHA-256 for new passwords
@@ -20,13 +20,8 @@ import urllib.request
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
-
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.core.database import get_db_connection
 from app.core.security import (
@@ -39,9 +34,6 @@ from app.core.security import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-
-# ── Rate Limiter ──────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address)
 
 # ── Azure AD Config — loaded ONLY from environment (no hardcoded fallbacks) ───
 def _require_env(key: str) -> str:
@@ -115,7 +107,6 @@ def init_users_table():
                 pass
 
         # FIX-5 + FIX-13: Seed default users with bcrypt hashes
-        # NOTE: Change these passwords immediately after first login!
         cursor.execute("SELECT COUNT(*) as count FROM users;")
         count = cursor.fetchone()["count"]
         if count == 0:
@@ -131,16 +122,15 @@ def init_users_table():
     conn.close()
 
 
-# ── Login Endpoint (rate-limited) ─────────────────────────────────────────────
+# ── Login Endpoint ────────────────────────────────────────────────────────────
 
 @router.post("/login")
-@limiter.limit("5/minute")
 def login(request: Request, payload: dict = Body(...)):
     """
     Authenticate user with username/password.
     FIX-1: Returns signed JWT.
     FIX-4: bcrypt verify only — no plaintext fallback.
-    FIX-8: Rate limited to 5 requests/minute/IP.
+    FIX-8: Rate limited via custom middleware.
     """
     init_users_table()
     client_ip = request.client.host if request.client else "unknown"
@@ -215,12 +205,10 @@ def get_microsoft_auth_url(redirect_uri: Optional[str] = None):
     Generate Microsoft Azure AD OAuth login URL.
     FIX-7: redirect_uri validated against whitelist.
     """
-    # FIX-7: Only allow whitelisted redirect URIs
     if redirect_uri and redirect_uri not in ALLOWED_REDIRECT_URIS:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri")
     callback_url = redirect_uri or AZURE_REDIRECT_URI
 
-    # FIX: Use cryptographically random state to prevent CSRF
     state = secrets.token_urlsafe(16)
     params = {
         "client_id":     AZURE_CLIENT_ID,
@@ -255,7 +243,6 @@ def microsoft_callback(
     if error or not code:
         return RedirectResponse(url=f"{FRONTEND_URL}/login?error=auth_failed")
 
-    # FIX-7: Whitelist redirect_uri
     if redirect_uri and redirect_uri not in ALLOWED_REDIRECT_URIS:
         return RedirectResponse(url=f"{FRONTEND_URL}/login?error=invalid_redirect")
     callback_url = redirect_uri or AZURE_REDIRECT_URI
@@ -281,7 +268,6 @@ def microsoft_callback(
         if not ms_access_token:
             return RedirectResponse(url=f"{FRONTEND_URL}/login?error=token_failed")
 
-        # Fetch user profile from Microsoft Graph
         me_req = urllib.request.Request(
             "https://graph.microsoft.com/v1.0/me",
             headers={"Authorization": f"Bearer {ms_access_token}"},
@@ -310,7 +296,6 @@ def microsoft_callback(
                 url=f"{FRONTEND_URL}/login?error=not_registered&email={urllib.parse.quote(email)}"
             )
 
-        # FIX-1: Create signed JWT
         jwt_token = create_access_token(user["id"], user["role"])
         user_data = {
             "id":           user["id"],
@@ -321,14 +306,12 @@ def microsoft_callback(
             "account_type": "microsoft",
         }
 
-        # FIX-9: Issue one-time code for frontend to exchange — token NOT in URL
         temp_code = _create_oauth_temp_code({"token": jwt_token, "user": user_data})
         audit_logger.info(f"OAUTH_LOGIN_SUCCESS user_id={user['id']} email={email!r}")
 
         return RedirectResponse(url=f"{FRONTEND_URL}/login?oauth_code={temp_code}")
 
     except Exception:
-        # FIX-13: Never expose internal exception details
         audit_logger.exception("Microsoft OAuth callback error")
         return RedirectResponse(url=f"{FRONTEND_URL}/login?error=auth_failed")
 
@@ -372,7 +355,7 @@ def get_graph_app_token() -> Optional[str]:
 @router.get("/microsoft/search-users")
 def search_microsoft_users(
     q: str = Query(""),
-    _auth: dict = Depends(get_current_user),   # Require auth to search AD users
+    _auth: dict = Depends(get_current_user),
 ):
     """Search Microsoft Graph for organizational users (requires authentication)."""
     if not q or len(q.strip()) < 2:
@@ -402,7 +385,6 @@ def search_microsoft_users(
                             "userPrincipalName": u.get("userPrincipalName") or mail,
                         })
 
-        # Strategy 1: $search
         try:
             clean_q = search_query.replace('"', "").strip()
             words = [w for w in clean_q.split() if w]
@@ -424,9 +406,8 @@ def search_microsoft_users(
             with urllib.request.urlopen(req1, timeout=10) as resp1:
                 add_users(json.loads(resp1.read().decode("utf-8")).get("value", []))
         except Exception:
-            pass  # FIX-13: Log internally, don't expose
+            pass
 
-        # Strategy 2: $filter startsWith
         try:
             clean_q = search_query.replace("'", "''")
             filter_expr = (
@@ -448,7 +429,6 @@ def search_microsoft_users(
         except Exception:
             pass
 
-        # Strategy 3: Tokenized search
         if ("@" in search_query or "." in search_query or " " in search_query) and len(matched_users) < 5:
             try:
                 tokens = [t.replace("'", "''") for t in search_query.replace("@", " ").replace(".", " ").split() if len(t) > 1]
