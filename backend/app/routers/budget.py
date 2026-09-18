@@ -1,6 +1,7 @@
 import io
+import re
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status
 import pandas as pd
 from app.core.database import get_db_connection
@@ -9,14 +10,16 @@ router = APIRouter(prefix="/api/reports", tags=["Budget Reports"])
 
 MONTH_NAMES = ["april", "may", "june", "july", "august", "september", "october", "november", "december", "january", "february", "march"]
 REQUIRED_TOTAL_COLS = ['range_name', 'sales_group', 'part_no', 'product_sku', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'january', 'february', 'march', 'total']
-REQUIRED_DIS_COLS = ['month', 'product_id', 'product', 'division_name', 'primary_target', 'primary_actual', 'rd_target', 'rd_actual', 'qtr']
+REQUIRED_DIS_COLS = ['product_id', 'product', 'division_name', 'primary_target', 'rd_target']
+
 
 @router.get("/total-budget")
 def get_total_budget(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=500),
     search: Optional[str] = None,
-    month: Optional[str] = None
+    month: Optional[str] = None,
+    year: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -32,6 +35,10 @@ def get_total_budget(
         where_clauses.append("(cost_center LIKE %s OR sales_group LIKE %s OR range_name LIKE %s OR part_no LIKE %s OR product_sku LIKE %s)")
         s = f"%{search}%"
         params.extend([s, s, s, s, s])
+
+    if year and year.strip().lower() not in ["all years", "all"]:
+        where_clauses.append("(fiscal_year = %s OR fiscal_year IS NULL)")
+        params.append(year.strip())
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -97,7 +104,7 @@ async def upload_annual_budget_excel(
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) as cnt FROM total_budget;")
+        cursor.execute("SELECT COUNT(*) as cnt FROM total_budget WHERE fiscal_year = %s;", (fiscal_year,))
         existing_cnt = cursor.fetchone()['cnt']
 
         if existing_cnt > 0 and not overwrite:
@@ -109,15 +116,15 @@ async def upload_annual_budget_excel(
                 "message": f"Budget data for {fiscal_year} already exists in total_budget ({existing_cnt} rows). Do you want to replace/overwrite it?"
             }
 
-        cursor.execute("DELETE FROM total_budget;")
+        cursor.execute("DELETE FROM total_budget WHERE fiscal_year = %s;", (fiscal_year,))
         conn.commit()
 
         insert_sql = """
             INSERT INTO total_budget (
-                range_name, sales_group, part_no, product_sku,
+                fiscal_year, range_name, sales_group, part_no, product_sku,
                 april, may, june, july, august, september, october, november, december, january, february, march, total
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
         
@@ -147,15 +154,15 @@ async def upload_annual_budget_excel(
             grand_tot += tot
 
             insert_data.append((
-                r_name, s_grp, p_no, p_sku,
+                fiscal_year, r_name, s_grp, p_no, p_sku,
                 april, may, june, july, august, september, october, november, december, january, february, march, tot
             ))
 
         cursor.executemany(insert_sql, insert_data)
 
         cursor.execute("""
-            INSERT IGNORE INTO division_mappings (sales_group, range_name, is_mapped)
-            SELECT DISTINCT TRIM(sales_group), TRIM(range_name), 1
+            INSERT IGNORE INTO division_mappings (sales_group, range_name)
+            SELECT DISTINCT TRIM(sales_group), TRIM(range_name)
             FROM total_budget
             WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
         """)
@@ -173,6 +180,45 @@ async def upload_annual_budget_excel(
     }
 
 
+MONTH_MAP = {
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+}
+
+def parse_dis_budget_month(val):
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None, '1st QTR'
+    
+    if isinstance(val, (datetime, pd.Timestamp)):
+        m = val.month
+        qtr = '1st QTR' if m in [4, 5, 6] else ('2nd QTR' if m in [7, 8, 9] else ('3rd QTR' if m in [10, 11, 12] else '4th QTR'))
+        return val.strftime("%Y-%m-01 00:00:00"), qtr
+    
+    s = str(val).strip()
+    if not s or s.lower() == 'nan':
+        return None, '1st QTR'
+        
+    # Match 'Apr-26', 'Apr 26', 'Apr/26'
+    m_match = re.match(r'^([A-Za-z]{3})[-/\s]?(\d{2,4})$', s)
+    if m_match:
+        m_str = m_match.group(1).lower()
+        y_str = m_match.group(2)
+        year = int(y_str) if len(y_str) == 4 else (2000 + int(y_str))
+        month_num = MONTH_MAP.get(m_str, 1)
+        qtr = '1st QTR' if month_num in [4, 5, 6] else ('2nd QTR' if month_num in [7, 8, 9] else ('3rd QTR' if month_num in [10, 11, 12] else '4th QTR'))
+        return f"{year:04d}-{month_num:02d}-01 00:00:00", qtr
+        
+    try:
+        dt = pd.to_datetime(s)
+        if not pd.isna(dt):
+            m = dt.month
+            qtr = '1st QTR' if m in [4, 5, 6] else ('2nd QTR' if m in [7, 8, 9] else ('3rd QTR' if m in [10, 11, 12] else '4th QTR'))
+            return dt.strftime("%Y-%m-01 00:00:00"), qtr
+    except Exception:
+        pass
+
+    return s, '1st QTR'
+
 # Get Dis Budget Records
 @router.get("/dis-budget")
 def get_dis_budget(
@@ -181,7 +227,8 @@ def get_dis_budget(
     search: Optional[str] = None,
     division: Optional[str] = None,
     qtr: Optional[str] = None,
-    month_num: Optional[int] = Query(7, ge=1, le=12)
+    month_num: Optional[int] = Query(7, ge=1, le=12),
+    year: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -206,6 +253,10 @@ def get_dis_budget(
         where_clauses.append("qtr = %s")
         params.append(qtr)
 
+    if year and year.strip().lower() not in ["all years", "all"]:
+        where_clauses.append("(fiscal_year = %s OR fiscal_year IS NULL)")
+        params.append(year.strip())
+
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     with conn.cursor() as cursor:
@@ -213,9 +264,7 @@ def get_dis_budget(
             SELECT 
                 COUNT(*) as cnt, 
                 COALESCE(SUM(primary_target), 0) as total_pri_target,
-                COALESCE(SUM(primary_actual), 0) as total_pri_actual,
-                COALESCE(SUM(rd_target), 0) as total_rd_target,
-                COALESCE(SUM(rd_actual), 0) as total_rd_actual
+                COALESCE(SUM(rd_target), 0) as total_rd_target
             FROM dis_budget{where_sql};
         """, params)
         agg = cursor.fetchone()
@@ -225,9 +274,7 @@ def get_dis_budget(
         cursor.execute(f"""
             SELECT 
                 COALESCE(SUM(primary_target), 0) as wm_pri_target,
-                COALESCE(SUM(primary_actual), 0) as wm_pri_actual,
-                COALESCE(SUM(rd_target), 0) as wm_rd_target,
-                COALESCE(SUM(rd_actual), 0) as wm_rd_actual
+                COALESCE(SUM(rd_target), 0) as wm_rd_target
             FROM dis_budget{wm_where_sql};
         """, params + [selected_month_num])
         wm_agg = cursor.fetchone()
@@ -237,7 +284,15 @@ def get_dis_budget(
 
         for row in rows:
             if row.get("month"):
-                row["month"] = str(row["month"])
+                m_val = row["month"]
+                if isinstance(m_val, (datetime, date)):
+                    row["month"] = m_val.strftime("%b-%y")
+                else:
+                    try:
+                        dt = pd.to_datetime(m_val)
+                        row["month"] = dt.strftime("%b-%y")
+                    except Exception:
+                        row["month"] = str(m_val)
 
     conn.close()
 
@@ -247,15 +302,11 @@ def get_dis_budget(
         "selected_month_num": selected_month_num,
         "summary": {
             "primary_target": round(agg['total_pri_target'], 2),
-            "primary_actual": round(agg['total_pri_actual'], 2),
-            "rd_target": round(agg['total_rd_target'], 2),
-            "rd_actual": round(agg['total_rd_actual'], 2)
+            "rd_target": round(agg['total_rd_target'], 2)
         },
         "working_month_summary": {
             "primary_target": round(wm_agg['wm_pri_target'], 2),
-            "primary_actual": round(wm_agg['wm_pri_actual'], 2),
-            "rd_target": round(wm_agg['wm_rd_target'], 2),
-            "rd_actual": round(wm_agg['wm_rd_actual'], 2)
+            "rd_target": round(wm_agg['wm_rd_target'], 2)
         },
         "page": page_num,
         "limit": limit_num,
@@ -292,12 +343,12 @@ async def upload_dis_budget_excel(
     if missing_cols:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Dis Budget Excel column validation failed! Missing required columns: {', '.join(missing_cols)}. Expected columns: Month, Product ID, Product, DIVISION NAME, Primary Target, Primary Actual, RD Target, RD Actual, QTR"
+            detail=f"Dis Budget Excel column validation failed! Missing required columns: {', '.join(missing_cols)}. Expected columns: Product ID, Product, DIVISION NAME, Primary Target, RD Target (Optional: Month, QTR)"
         )
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) as cnt FROM dis_budget;")
+        cursor.execute("SELECT COUNT(*) as cnt FROM dis_budget WHERE fiscal_year = %s;", (fiscal_year,))
         existing_cnt = cursor.fetchone()['cnt']
 
         if existing_cnt > 0 and not overwrite:
@@ -309,38 +360,42 @@ async def upload_dis_budget_excel(
                 "message": f"Dis Budget data for {fiscal_year} already exists in dis_budget ({existing_cnt} rows). Do you want to replace/overwrite it?"
             }
 
-        cursor.execute("DELETE FROM dis_budget;")
+        cursor.execute("DELETE FROM dis_budget WHERE fiscal_year = %s;", (fiscal_year,))
         conn.commit()
 
         insert_sql = """
             INSERT INTO dis_budget (
-                month, product_id, product, division_name,
-                primary_target, primary_actual, rd_target, rd_actual, qtr
+                fiscal_year, month, product_id, product, division_name,
+                primary_target, rd_target, qtr
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s
             )
         """
 
         insert_data = []
         tot_pri_tar = 0.0
+        tot_rd_tar = 0.0
 
         for _, row in df.iterrows():
-            m_val = str(row.get('month') or '').strip()
+            raw_month = row.get('month') if 'month' in df.columns else None
+            parsed_month, auto_qtr = parse_dis_budget_month(raw_month)
+            
             p_id = str(row.get('product_id') or '').strip()
             p_name = str(row.get('product') or '').strip()
             div_name = str(row.get('division_name') or '').strip()
 
             pri_tar = float(row.get('primary_target') or 0.0)
-            pri_act = float(row.get('primary_actual') or 0.0)
             rd_tar = float(row.get('rd_target') or 0.0)
-            rd_act = float(row.get('rd_actual') or 0.0)
-            qtr = str(row.get('qtr') or 'Q1').strip()
+            
+            row_qtr = str(row.get('qtr') or '').strip() if 'qtr' in df.columns else ''
+            final_qtr = row_qtr if row_qtr and row_qtr.lower() != 'nan' else auto_qtr
 
             tot_pri_tar += pri_tar
+            tot_rd_tar += rd_tar
 
             insert_data.append((
-                m_val, p_id, p_name, div_name,
-                pri_tar, pri_act, rd_tar, rd_act, qtr
+                fiscal_year, parsed_month, p_id, p_name, div_name,
+                pri_tar, rd_tar, final_qtr
             ))
 
         if insert_data:
@@ -353,6 +408,8 @@ async def upload_dis_budget_excel(
         "success": True,
         "inserted_rows": len(insert_data),
         "total_primary_target": round(tot_pri_tar, 2),
+        "total_rd_target": round(tot_rd_tar, 2),
         "fiscal_year": fiscal_year,
         "message": f"Successfully uploaded and replaced {len(insert_data)} Dis Budget rows for {fiscal_year}!"
     }
+

@@ -21,6 +21,7 @@ const UploadAnnualBudgetPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedYearFilter, setSelectedYearFilter] = useState('FY 2026/27');
   const [loading, setLoading] = useState(true);
 
   // Upload Modal State
@@ -44,7 +45,7 @@ const UploadAnnualBudgetPage = () => {
     setLoading(true);
     try {
       const res = await api.get('/reports/total-budget', {
-        params: { page, limit: 15, search: searchTerm }
+        params: { page, limit: 15, search: searchTerm, year: selectedYearFilter }
       });
       if (res.data) {
         setRows(res.data.rows || []);
@@ -62,7 +63,7 @@ const UploadAnnualBudgetPage = () => {
 
   useEffect(() => {
     loadBudgetData();
-  }, [page, searchTerm]);
+  }, [page, searchTerm, selectedYearFilter]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -199,20 +200,41 @@ const UploadAnnualBudgetPage = () => {
         </div>
       </div>
 
-      {/* Search & Action Bar */}
+      {/* Search & Action Bar with Fiscal Year Filter */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ position: 'relative', width: '320px' }}>
-          <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
-          <input
-            type="text"
-            placeholder="Search Range, Sales Group, Part No, Product..."
-            value={searchTerm}
-            onChange={e => {
-              setSearchTerm(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          {/* Search Box */}
+          <div style={{ position: 'relative', width: '320px' }}>
+            <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
+            <input
+              type="text"
+              placeholder="Search Range, Sales Group, Part No, Product..."
+              value={searchTerm}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
+            />
+          </div>
+
+          {/* Fiscal Year Filter Selector Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'var(--bg-card)', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+            <Calendar style={{ width: '16px', height: '16px', color: 'var(--gsh-teal)' }} />
+            <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Fiscal Year:</label>
+            <select
+              value={selectedYearFilter}
+              onChange={e => {
+                setSelectedYearFilter(e.target.value);
+                setPage(1);
+              }}
+              style={{ padding: '0.35rem 0.6rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 800, outline: 'none', cursor: 'pointer' }}
+            >
+              {FISCAL_YEARS.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <button

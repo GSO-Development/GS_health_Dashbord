@@ -162,6 +162,7 @@ def init_db():
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS total_budget (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    fiscal_year VARCHAR(50) DEFAULT 'FY 2026/27',
                     s_no INT,
                     cost_center VARCHAR(100),
                     sales_group VARCHAR(100),
@@ -184,14 +185,21 @@ def init_db():
                     total DOUBLE DEFAULT 0,
                     INDEX idx_cost_center (cost_center),
                     INDEX idx_sales_group (sales_group),
-                    INDEX idx_product_sku (product_sku)
+                    INDEX idx_product_sku (product_sku),
+                    INDEX idx_fiscal_year (fiscal_year)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE total_budget ADD COLUMN fiscal_year VARCHAR(50) DEFAULT 'FY 2026/27';")
+            except Exception:
+                pass
 
             # 4. Table for Dis Budget
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS dis_budget (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    fiscal_year VARCHAR(50) DEFAULT 'FY 2026/27',
                     month DATETIME,
                     product_id VARCHAR(100),
                     product VARCHAR(255),
@@ -205,9 +213,15 @@ def init_db():
                     qtr VARCHAR(50),
                     INDEX idx_product_id (product_id),
                     INDEX idx_division_name (division_name),
-                    INDEX idx_qtr (qtr)
+                    INDEX idx_qtr (qtr),
+                    INDEX idx_dis_fiscal_year (fiscal_year)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE dis_budget ADD COLUMN fiscal_year VARCHAR(50) DEFAULT 'FY 2026/27';")
+            except Exception:
+                pass
 
             # 5. Table for Axienta Data
             cursor.execute("""

@@ -4,12 +4,27 @@ import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
+const fmtMonth = (v) => {
+  if (!v) return '-';
+  const str = String(v).trim();
+  if (/^[A-Za-z]{3}-\d{2,4}$/.test(str)) return str;
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const mon = monthNames[d.getMonth()];
+    const yr = String(d.getFullYear()).slice(-2);
+    return `${mon}-${yr}`;
+  }
+  return str;
+};
+
 const FISCAL_YEARS = [
   'FY 2026/27',
   'FY 2027/28',
   'FY 2025/26',
   'FY 2024/25'
 ];
+
 
 const UploadDisBudgetPage = () => {
   const [rows, setRows] = useState([]);
@@ -19,6 +34,7 @@ const UploadDisBudgetPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedYearFilter, setSelectedYearFilter] = useState('FY 2026/27');
   const [loading, setLoading] = useState(true);
 
   // Upload Modal State
@@ -42,7 +58,7 @@ const UploadDisBudgetPage = () => {
     setLoading(true);
     try {
       const res = await api.get('/reports/dis-budget', {
-        params: { page, limit: 15, search: searchTerm }
+        params: { page, limit: 15, search: searchTerm, year: selectedYearFilter }
       });
       if (res.data) {
         setRows(res.data.rows || []);
@@ -58,7 +74,7 @@ const UploadDisBudgetPage = () => {
 
   useEffect(() => {
     loadDisBudgetData();
-  }, [page, searchTerm]);
+  }, [page, searchTerm, selectedYearFilter]);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -127,10 +143,10 @@ const UploadDisBudgetPage = () => {
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PieChart style={{ width: '24px', height: '24px', color: 'var(--gsh-teal)' }} />
-            Upload Dis Budget (Distributor Budget Management)
+            Upload Dis Budget (Distributor Target Budget Management)
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Manage distributor sales budget records (`dis_budget` table). Upload Excel spreadsheets, validate column order, select Fiscal Year, and replace budget records.
+            Manage distributor target budget records (`dis_budget` table). Upload target Excel files (Product ID, Product, DIVISION NAME, Primary Target, RD Target).
           </p>
         </div>
 
@@ -161,65 +177,76 @@ const UploadDisBudgetPage = () => {
         </button>
       </div>
 
-      {/* Top KPI Cards */}
+      {/* Top 3 KPI Cards (Rows, Primary Target, RD Target) */}
       {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-          <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+          <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderLeft: '4px solid var(--gsh-teal)' }}>
             <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(0,168,150,0.12)', color: 'var(--gsh-teal)' }}>
               <Layers style={{ width: '24px', height: '24px' }} />
             </div>
             <div>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL DIS BUDGET ROWS</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>{totalCount.toLocaleString()}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)' }}>{totalCount.toLocaleString()}</div>
             </div>
           </div>
 
-          <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderLeft: '4px solid #3b82f6' }}>
             <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
               <DollarSign style={{ width: '24px', height: '24px' }} />
             </div>
             <div>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL PRIMARY TARGET (LKR)</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6' }}>{fmt(summary.primary_target)}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#3b82f6' }}>{fmt(summary.primary_target)}</div>
             </div>
           </div>
 
-          <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
-              <DollarSign style={{ width: '24px', height: '24px' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL PRIMARY ACTUAL (LKR)</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{fmt(summary.primary_actual)}</div>
-            </div>
-          </div>
-
-          <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderLeft: '4px solid var(--gsh-red)' }}>
             <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(200,16,46,0.12)', color: 'var(--gsh-red)' }}>
               <DollarSign style={{ width: '24px', height: '24px' }} />
             </div>
             <div>
               <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL RD TARGET (LKR)</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--gsh-red)' }}>{fmt(summary.rd_target)}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--gsh-red)' }}>{fmt(summary.rd_target)}</div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Search & Action Bar */}
+      {/* Search & Action Bar with Fiscal Year Filter */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ position: 'relative', width: '320px' }}>
-          <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
-          <input
-            type="text"
-            placeholder="Search Product ID, Product, Division..."
-            value={searchTerm}
-            onChange={e => {
-              setSearchTerm(e.target.value);
-              setPage(1);
-            }}
-            style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          {/* Search Box */}
+          <div style={{ position: 'relative', width: '320px' }}>
+            <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
+            <input
+              type="text"
+              placeholder="Search Product ID, Product, Division..."
+              value={searchTerm}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
+            />
+          </div>
+
+          {/* Fiscal Year Filter Selector Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'var(--bg-card)', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+            <Calendar style={{ width: '16px', height: '16px', color: 'var(--gsh-teal)' }} />
+            <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Fiscal Year:</label>
+            <select
+              value={selectedYearFilter}
+              onChange={e => {
+                setSelectedYearFilter(e.target.value);
+                setPage(1);
+              }}
+              style={{ padding: '0.35rem 0.6rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 800, outline: 'none', cursor: 'pointer' }}
+            >
+              {FISCAL_YEARS.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <button
@@ -231,67 +258,50 @@ const UploadDisBudgetPage = () => {
         </button>
       </div>
 
-      {/* Main Datatable with Requested Exact Headers */}
+      {/* Main Datatable with Target Columns Only */}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 310px)', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontWeight: 800 }}>
-              <tr style={{ color: 'var(--text-subtle)' }}>
+              <tr style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                 <th style={{ padding: '0.65rem 0.75rem' }}>Month</th>
                 <th style={{ padding: '0.65rem 0.75rem' }}>Product ID</th>
                 <th style={{ padding: '0.65rem 0.75rem' }}>Product</th>
                 <th style={{ padding: '0.65rem 0.75rem' }}>DIVISION NAME</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>Primary Target</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>Primary Actual</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>RD Target</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>RD Actual</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right', color: '#10b981' }}>Pri-%</th>
-                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>RD-%</th>
+                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>Primary Target (LKR)</th>
+                <th style={{ padding: '0.65rem 0.75rem', textAlign: 'right', color: 'var(--gsh-red)' }}>RD Target (LKR)</th>
                 <th style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>QTR</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="11" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading Dis Budget records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="11" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No Dis Budget records found. Click <strong>Upload Dis Budget Excel</strong> to import.
                   </td>
                 </tr>
               ) : (
-                rows.map((row, idx) => {
-                  const priPct = row.primary_target > 0 ? roundPct((row.primary_actual / row.primary_target) * 100) : 0;
-                  const rdPct = row.rd_target > 0 ? roundPct((row.rd_actual / row.rd_target) * 100) : 0;
-
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-hover)' }}>
-                      <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{row.month}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>{row.product_id}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '220px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.product}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: 'var(--gsh-teal)' }}>{row.division_name}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(row.primary_target)}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{fmt(row.primary_actual)}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(row.rd_target)}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{fmt(row.rd_actual)}</td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right' }}>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: priPct >= 100 ? '#10b981' : '#ef4444', background: priPct >= 100 ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                          {priPct}%
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right' }}>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: rdPct >= 100 ? '#3b82f6' : '#f59e0b', background: rdPct >= 100 ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.12)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                          {rdPct}%
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'center', fontWeight: 800, color: 'var(--text-subtle)' }}>{row.qtr}</td>
-                    </tr>
-                  );
-                })
+                rows.map((row, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-hover)' }}>
+                    <td style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(0,168,150,0.1)', borderRadius: '4px', border: '1px solid rgba(0,168,150,0.2)' }}>
+                        {fmtMonth(row.month)}
+                      </span>
+                    </td>
+                    <td style={{ padding: '0.55rem 0.75rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>{row.product_id}</td>
+                    <td style={{ padding: '0.55rem 0.75rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.product}</td>
+                    <td style={{ padding: '0.55rem 0.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{row.division_name}</td>
+                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{fmt(row.primary_target)}</td>
+                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700, color: 'var(--gsh-red)' }}>{fmt(row.rd_target)}</td>
+                    <td style={{ padding: '0.55rem 0.75rem', textAlign: 'center', fontWeight: 800, color: 'var(--text-subtle)' }}>{row.qtr || '1st QTR'}</td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -300,7 +310,7 @@ const UploadDisBudgetPage = () => {
         {/* Pagination Footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.65rem 1rem', borderTop: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
           <div>
-            Showing Page <strong>{page}</strong> of <strong>{totalPages}</strong> ({totalCount} total items)
+            Showing Page <strong>{page}</strong> of <strong>{totalPages}</strong> ({totalCount.toLocaleString()} total items)
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
@@ -377,9 +387,10 @@ const UploadDisBudgetPage = () => {
 
                 {/* Column Matching Rule Warning Box */}
                 <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <strong style={{ color: '#3b82f6', display: 'block', marginBottom: '0.25rem' }}>Required Excel Column Headers:</strong>
-                  <code>Month, Product ID, Product, DIVISION NAME, Primary Target, Primary Actual, RD Target, RD Actual, QTR</code>
+                  <strong style={{ color: '#3b82f6', display: 'block', marginBottom: '0.25rem' }}>Excel Columns Format:</strong>
+                  <code>Month (e.g. Apr-26), Product ID, Product, DIVISION NAME, Primary Target, RD Target, QTR (e.g. 1st QTR)</code>
                 </div>
+
 
                 {/* Action Buttons */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
@@ -426,7 +437,7 @@ const UploadDisBudgetPage = () => {
                     onClick={() => handleUploadSubmit(true)}
                     style={{ padding: '0.55rem 1.25rem', borderRadius: 'var(--radius-xs)', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 800, cursor: uploading ? 'not-allowed' : 'pointer', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}
                   >
-                    {uploading ? 'Replacing Data...' : 'Yes, Overwrite & Replace Dis Budget'}
+                    {uploading ? 'Replacing...' : 'Yes, Replace & Overwrite Data'}
                   </button>
                 </div>
               </div>
@@ -439,7 +450,5 @@ const UploadDisBudgetPage = () => {
     </div>
   );
 };
-
-const roundPct = (v) => Math.round(v || 0);
 
 export default UploadDisBudgetPage;

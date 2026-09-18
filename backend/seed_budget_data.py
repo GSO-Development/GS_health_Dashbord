@@ -109,27 +109,20 @@ def seed_dis_budget(conn):
         div_name = str(row.get('DIVISION NAME')).strip() if pd.notna(row.get('DIVISION NAME')) else None
         
         pri_target = parse_num(row.get('Primary Target'))
-        pri_actual = parse_num(row.get('Primary Actual'))
         rd_target = parse_num(row.get('RD Target'))
-        rd_actual = parse_num(row.get('RD Actual'))
-        pri_pct = parse_num(row.get('Pri-%'))
-        rd_pct = parse_num(row.get('RD-%'))
-        qtr = str(row.get('QTR')).strip() if pd.notna(row.get('QTR')) else None
+        qtr = str(row.get('QTR')).strip() if pd.notna(row.get('QTR')) else 'Q1'
         
         rows_to_insert.append((
-            month_dt, prod_id, prod_name, div_name,
-            pri_target, pri_actual, rd_target, rd_actual,
-            pri_pct, rd_pct, qtr
+            'FY 2026/27', month_dt, prod_id, prod_name, div_name,
+            pri_target, rd_target, qtr
         ))
 
     insert_sql = """
         INSERT INTO dis_budget (
-            month, product_id, product, division_name,
-            primary_target, primary_actual, rd_target, rd_actual,
-            pri_pct, rd_pct, qtr
+            fiscal_year, month, product_id, product, division_name,
+            primary_target, rd_target, qtr
         ) VALUES (
-            %s, %s, %s, %s,
-            %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
             %s, %s, %s
         );
     """
