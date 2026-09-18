@@ -9,7 +9,11 @@ router = APIRouter(prefix="/api/reports", tags=["Reports"])
 def get_invoice_output(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=500),
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -23,6 +27,22 @@ def get_invoice_output(
         where_clauses.append("(invoice_no LIKE %s OR order_no LIKE %s OR delivery_customer_name LIKE %s OR catalog_no LIKE %s OR description LIKE %s)")
         s = f"%{search}%"
         params.extend([s, s, s, s, s])
+
+    if year:
+        where_clauses.append("YEAR(invoice_date) = %s")
+        params.append(year)
+
+    if month:
+        where_clauses.append("MONTH(invoice_date) = %s")
+        params.append(month)
+
+    if start_date:
+        where_clauses.append("DATE(invoice_date) >= %s")
+        params.append(start_date)
+
+    if end_date:
+        where_clauses.append("DATE(invoice_date) <= %s")
+        params.append(end_date)
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -44,11 +64,13 @@ def get_invoice_output(
     return {
         "report_title": "Invoice Output Report",
         "total_count": total_count,
+        "total": total_count,
         "total_net_amount": total_net_amount,
         "page": page_num,
         "limit": limit_num,
         "total_pages": (total_count + limit_num - 1) // limit_num if limit_num else 1,
-        "rows": rows
+        "rows": rows,
+        "data": rows
     }
 
 
@@ -57,7 +79,11 @@ def get_invoice_output(
 def get_outstanding_output(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=500),
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -71,6 +97,22 @@ def get_outstanding_output(
         where_clauses.append("(customer_no LIKE %s OR customer_name LIKE %s OR order_no LIKE %s OR catalog_no LIKE %s OR catalog_desc LIKE %s)")
         s = f"%{search}%"
         params.extend([s, s, s, s, s])
+
+    if year:
+        where_clauses.append("YEAR(planned_delivery_date) = %s")
+        params.append(year)
+
+    if month:
+        where_clauses.append("MONTH(planned_delivery_date) = %s")
+        params.append(month)
+
+    if start_date:
+        where_clauses.append("DATE(planned_delivery_date) >= %s")
+        params.append(start_date)
+
+    if end_date:
+        where_clauses.append("DATE(planned_delivery_date) <= %s")
+        params.append(end_date)
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -92,11 +134,13 @@ def get_outstanding_output(
     return {
         "report_title": "Outstanding Output Report",
         "total_count": total_count,
+        "total": total_count,
         "total_backlog_value": total_backlog,
         "page": page_num,
         "limit": limit_num,
         "total_pages": (total_count + limit_num - 1) // limit_num if limit_num else 1,
-        "rows": rows
+        "rows": rows,
+        "data": rows
     }
 
 

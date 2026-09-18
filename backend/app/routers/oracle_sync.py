@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from app.services.oracle_sync import sync_oracle_live, sync_oracle_invoices, sync_oracle_outstanding, sync_status
 
 router = APIRouter(prefix="/api/oracle-sync", tags=["Oracle Sync"])
@@ -10,24 +10,44 @@ def get_oracle_sync_status():
 
 @router.post("/sync-invoices")
 def trigger_invoice_sync(
-    oracle_user: Optional[str] = Body(None, embed=True),
-    oracle_password: Optional[str] = Body(None, embed=True)
+    payload: dict = Body(default={})
 ):
-    result = sync_oracle_invoices(oracle_user, oracle_password)
-    return result
+    try:
+        oracle_user = payload.get("oracle_user")
+        oracle_password = payload.get("oracle_password")
+        year = payload.get("year")
+        month = payload.get("month")
+        start_date = payload.get("start_date")
+        end_date = payload.get("end_date")
+        result = sync_oracle_invoices(oracle_user, oracle_password, year, month, start_date, end_date)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync-outstanding")
 def trigger_outstanding_sync(
-    oracle_user: Optional[str] = Body(None, embed=True),
-    oracle_password: Optional[str] = Body(None, embed=True)
+    payload: dict = Body(default={})
 ):
-    result = sync_oracle_outstanding(oracle_user, oracle_password)
-    return result
+    try:
+        oracle_user = payload.get("oracle_user")
+        oracle_password = payload.get("oracle_password")
+        year = payload.get("year")
+        month = payload.get("month")
+        start_date = payload.get("start_date")
+        end_date = payload.get("end_date")
+        result = sync_oracle_outstanding(oracle_user, oracle_password, year, month, start_date, end_date)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync")
 def trigger_oracle_sync(
-    oracle_user: Optional[str] = Body(None, embed=True),
-    oracle_password: Optional[str] = Body(None, embed=True)
+    payload: dict = Body(default={})
 ):
-    result = sync_oracle_live(oracle_user, oracle_password)
-    return result
+    try:
+        oracle_user = payload.get("oracle_user")
+        oracle_password = payload.get("oracle_password")
+        result = sync_oracle_live(oracle_user, oracle_password)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

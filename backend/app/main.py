@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
-from app.routers import health, reports, seed, budget, dashboard_fy, custom_dashboard, auth, users, division_mappings, prode_ifs, oracle_sync, axienta
+from app.routers import health, reports, budget, dashboard_fy, custom_dashboard, auth, users, division_mappings, prode_ifs, oracle_sync, axienta
 
 # Configure logging
 logging.basicConfig(
@@ -79,7 +79,6 @@ def startup_db():
 # Include Routers
 app.include_router(health.router)
 app.include_router(reports.router)
-app.include_router(seed.router)
 app.include_router(budget.router)
 app.include_router(dashboard_fy.router)
 app.include_router(custom_dashboard.router)

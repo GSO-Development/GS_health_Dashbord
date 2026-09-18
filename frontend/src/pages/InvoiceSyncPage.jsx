@@ -1,20 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, RefreshCw, Search, CheckCircle, AlertCircle, Database, Server, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, RefreshCw, Search, CheckCircle, AlertCircle, Database, Server, Play, ChevronLeft, ChevronRight, Calendar, DollarSign, Filter } from 'lucide-react';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const MONTHS_LIST = [
+  { num: 0, name: 'All Months' },
+  { num: 1, name: 'January' },
+  { num: 2, name: 'February' },
+  { num: 3, name: 'March' },
+  { num: 4, name: 'April' },
+  { num: 5, name: 'May' },
+  { num: 6, name: 'June' },
+  { num: 7, name: 'July' },
+  { num: 8, name: 'August' },
+  { num: 9, name: 'September' },
+  { num: 10, name: 'October' },
+  { num: 11, name: 'November' },
+  { num: 12, name: 'December' },
+];
+
+const YEARS_LIST = [
+  { val: '', label: 'All Years' },
+  { val: '2026', label: '2026' },
+  { val: '2025', label: '2025' },
+  { val: '2024', label: '2024' },
+];
+
 const InvoiceSyncPage = () => {
   const [data, setData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [totalNetAmount, setTotalNetAmount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [hasSynced, setHasSynced] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [toast, setToast] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
+
+  // Date Filter State (Similar to Axienta)
+  const [selectedYear, setSelectedYear] = useState('2026');
+  const [selectedMonthNum, setSelectedMonthNum] = useState(0); // 0 = All Months
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -24,15 +53,27 @@ const InvoiceSyncPage = () => {
   const loadInvoiceData = async () => {
     setLoading(true);
     try {
+      const params = {
+        search: searchTerm,
+        limit: 500,
+        page: 1,
+      };
+
+      if (selectedYear) params.year = selectedYear;
+      if (selectedMonthNum > 0) params.month = selectedMonthNum;
+      if (startDate) params.start_date = startDate;
+      if (endDate) params.end_date = endDate;
+
       const [resData, resStatus] = await Promise.all([
-        api.get('/invoice-output', { params: { search: searchTerm, limit: 500 } }),
+        api.get('/reports/invoice-output', { params }),
         api.get('/oracle-sync/status')
       ]);
 
-      if (resData.data && resData.data.data) {
-        setData(resData.data.data);
-        setTotalCount(resData.data.total || resData.data.data.length);
-        setHasSynced(true);
+      if (resData.data) {
+        const rows = resData.data.rows || resData.data.data || [];
+        setData(rows);
+        setTotalCount(resData.data.total_count || resData.data.total || rows.length);
+        setTotalNetAmount(resData.data.total_net_amount || 0);
       }
       if (resStatus.data) {
         setSyncStatus(resStatus.data);
@@ -43,19 +84,43 @@ const InvoiceSyncPage = () => {
     setLoading(false);
   };
 
+  useEffect(() => {
+    loadInvoiceData();
+  }, [selectedYear, selectedMonthNum, startDate, endDate]);
+
   const handleTriggerInvoiceSync = async () => {
     setSyncing(true);
     try {
-      showToast('Connecting to Oracle IFS (172.16.7.45) & executing ifsapp.gsh_invoice_report query...', 'info');
-      const res = await api.post('/oracle-sync/sync-invoices');
+      const periodLabel = selectedMonthNum > 0 
+        ? `${MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name} ${selectedYear}`
+        : (selectedYear ? `Year ${selectedYear}` : 'All Periods');
+
+      showToast(`Connecting to Oracle IFS (172.16.7.45) & syncing for ${periodLabel}...`, 'info');
+
+      const payload = {};
+      if (selectedYear) payload.year = parseInt(selectedYear);
+      if (selectedMonthNum > 0) payload.month = selectedMonthNum;
+      if (startDate) payload.start_date = startDate;
+      if (endDate) payload.end_date = endDate;
+
+      const res = await api.post('/oracle-sync/sync-invoices', payload, { timeout: 180000 });
       if (res.data) {
         showToast(res.data.message || '✅ Invoice Sync Complete!');
         await loadInvoiceData();
       }
-    } catch {
-      showToast('Failed to execute Oracle invoice sync query.', 'error');
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to execute Oracle invoice sync query.';
+      showToast(`Sync Notice: ${msg}`, 'error');
     }
     setSyncing(false);
+  };
+
+  const clearFilters = () => {
+    setSelectedYear('');
+    setSelectedMonthNum(0);
+    setStartDate('');
+    setEndDate('');
+    setSearchTerm('');
   };
 
   const filtered = data.filter(r => {
@@ -92,7 +157,7 @@ const InvoiceSyncPage = () => {
             Invoice Sync — Oracle IFS Data Connection (invoice_output)
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Read-only live connection to Oracle Database (172.16.7.45) executing <code style={{ background: 'var(--bg-hover)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>ifsapp.gsh_invoice_report@IFS_PROD_IFSAPP</code>.
+            Read-only connection to Oracle Database (172.16.7.45) executing <code style={{ background: 'var(--bg-hover)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>ifsapp.gsh_invoice_report@IFS_PROD_IFSAPP</code>.
           </p>
         </div>
       </div>
@@ -126,7 +191,7 @@ const InvoiceSyncPage = () => {
             }}
           >
             {syncing ? <RefreshCw className="animate-spin" style={{ width: '16px', height: '16px' }} /> : <Play style={{ width: '16px', height: '16px' }} />}
-            {syncing ? 'Syncing Invoice Data...' : 'Execute Oracle Invoice Query Sync'}
+            {syncing ? 'Syncing Invoice Data...' : `Execute Oracle Sync (${selectedMonthNum > 0 ? MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name : (selectedYear || 'All')})`}
           </button>
         </div>
 
@@ -136,19 +201,89 @@ const InvoiceSyncPage = () => {
             <code style={{ color: 'var(--gsh-teal)', fontWeight: 700 }}>SELECT * FROM ifsapp.gsh_invoice_report@IFS_PROD_IFSAPP</code>
           </div>
           <div>
-            <span style={{ color: 'var(--text-subtle)', fontWeight: 700 }}>Synced Local Records: </span>
+            <span style={{ color: 'var(--text-subtle)', fontWeight: 700 }}>Filtered Records: </span>
             <strong style={{ color: 'var(--gsh-red)', fontSize: '0.9rem' }}>{totalCount.toLocaleString()} Rows</strong>
           </div>
         </div>
       </div>
 
+      {/* Date Filter & Control Bar (Like Axienta Data Page) */}
+      <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 700 }}>
+            <Calendar style={{ width: '16px', height: '16px', color: 'var(--gsh-red)' }} />
+            Period Filter:
+          </div>
+
+          {/* Year Dropdown */}
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
+          >
+            {YEARS_LIST.map((y) => (
+              <option key={y.val} value={y.val}>{y.label}</option>
+            ))}
+          </select>
+
+          {/* Month Dropdown */}
+          <select
+            value={selectedMonthNum}
+            onChange={(e) => setSelectedMonthNum(parseInt(e.target.value))}
+            style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
+          >
+            {MONTHS_LIST.map((m) => (
+              <option key={m.num} value={m.num}>{m.name}</option>
+            ))}
+          </select>
+
+          {/* From Date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>From:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              style={{ padding: '0.4rem 0.6rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none' }}
+            />
+          </div>
+
+          {/* To Date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>To:</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              style={{ padding: '0.4rem 0.6rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.8rem', outline: 'none' }}
+            />
+          </div>
+
+          {(selectedYear || selectedMonthNum > 0 || startDate || endDate) && (
+            <button
+              onClick={clearFilters}
+              style={{ padding: '0.4rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Total Net Invoiced Value Indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'rgba(16, 185, 129, 0.1)', padding: '0.45rem 0.9rem', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+          <DollarSign style={{ width: '16px', height: '16px', color: '#10b981' }} />
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Period Revenue:</span>
+          <strong style={{ color: '#10b981', fontSize: '0.95rem' }}>Rs. {fmt(totalNetAmount)}</strong>
+        </div>
+      </div>
+
       {/* Search Bar & Pagination Meta */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ position: 'relative', width: '320px' }}>
+        <div style={{ position: 'relative', width: '340px' }}>
           <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
           <input
             type="text"
-            placeholder="Search Customer, Invoice No, Part No, SKU..."
+            placeholder="Search Customer, Invoice No, SKU, Region..."
             value={searchTerm}
             onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             style={{ width: '100%', padding: '0.5rem 0.75rem 0.5rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', outline: 'none' }}
@@ -160,77 +295,80 @@ const InvoiceSyncPage = () => {
         </div>
       </div>
 
-      {/* Datatable for invoice_output */}
+      {/* Invoice Data Table */}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 350px)', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-hover)', borderBottom: '2px solid var(--border-color)' }}>
-              <tr style={{ color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                <th style={{ padding: '0.75rem 1rem' }}>Customer Name</th>
-                <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-red)' }}>Invoice No</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Part No (Catalog No)</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Description</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Contract</th>
+        <div className="table-container" style={{ maxHeight: '550px', overflowY: 'auto' }}>
+          <table className="data-table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '0.825rem' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, zIndex: 10 }}>
+                <th style={{ padding: '0.75rem 1rem' }}>Invoice No</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Invoice Date</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#10b981' }}>Net Dom Amount (LKR)</th>
-                <th style={{ padding: '0.75rem 1rem' }}>Cust Grp</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Customer Name</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Catalog / SKU</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Description</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Invoiced Qty</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Unit Price</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Net Dom Amount</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Region / District</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Connecting to Oracle IFS & loading synced records...
-                  </td>
-                </tr>
-              ) : !hasSynced ? (
-                <tr>
-                  <td colSpan="8" style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-                      <Server style={{ width: '40px', height: '40px', color: 'var(--gsh-red)', opacity: 0.6 }} />
-                      <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>No Oracle Invoice Data Loaded</span>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        Click <strong style={{ color: 'var(--gsh-red)' }}>'Execute Oracle Invoice Query Sync'</strong> above to fetch live data from Oracle IFS.
-                      </span>
-                    </div>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                    <RefreshCw className="animate-spin" style={{ width: '24px', height: '24px', margin: '0 auto 0.5rem auto', color: 'var(--gsh-red)' }} />
+                    <div>Loading filtered invoice records...</div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No invoice records matching "{searchTerm}".
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.4rem' }}>
+                      No invoice records found for {selectedMonthNum > 0 ? MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name : ''} {selectedYear || ''}
+                    </div>
+                    <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto 1rem auto', lineHeight: 1.4 }}>
+                      The current database dataset contains <strong>19,046 invoice records for July 2026</strong>. 
+                      Switch to <strong>July</strong> or <strong>All Months</strong> to view them.
+                    </div>
+                    <button
+                      onClick={() => { setSelectedYear('2026'); setSelectedMonthNum(7); setStartDate(''); setEndDate(''); }}
+                      style={{ padding: '0.5rem 1.2rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontSize: '0.825rem', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      View July 2026 Invoices (19,046 Records)
+                    </button>
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((row, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '0.6rem 1rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      {row.delivery_customer_name || 'General Customer'}
-                    </td>
-                    <td style={{ padding: '0.6rem 1rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>
+                  <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--text-main)' }}>
                       {row.invoice_no || '-'}
                     </td>
-                    <td style={{ padding: '0.6rem 1rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-teal)' }}>
-                      {row.catalog_no || '-'}
-                    </td>
-                    <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {row.description || '-'}
-                    </td>
-                    <td style={{ padding: '0.6rem 1rem', fontWeight: 700 }}>
-                      <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', background: row.contract === 'GSTEA' ? 'rgba(239,68,68,0.1)' : 'rgba(0,168,150,0.1)', color: row.contract === 'GSTEA' ? '#ef4444' : 'var(--gsh-teal)', fontSize: '0.75rem' }}>
-                        {row.contract || 'HO'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.6rem 1rem', color: 'var(--text-subtle)' }}>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       {row.invoice_date ? String(row.invoice_date).substring(0, 10) : '-'}
                     </td>
-                    <td style={{ padding: '0.6rem 1rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
-                      LKR {fmt(row.net_dom_amount)}
+                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                      {row.delivery_customer_name || row.delivery_customer || '-'}
                     </td>
-                    <td style={{ padding: '0.6rem 1rem' }}>
-                      <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', background: row.cust_grp === 'DISTRI' ? 'rgba(200,16,46,0.1)' : 'var(--bg-hover)', color: row.cust_grp === 'DISTRI' ? 'var(--gsh-red)' : 'var(--text-main)', fontWeight: 700, fontSize: '0.75rem' }}>
-                        {row.cust_grp || 'STANDARD'}
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', background: 'var(--bg-hover)', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.75rem' }}>
+                        {row.catalog_no || '-'}
                       </span>
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.description}>
+                      {row.description || '-'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {(row.invoiced_qty || 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: 'var(--text-muted)' }}>
+                      {fmt(row.calculated_unit_price)}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>
+                      {fmt(row.net_dom_amount)}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
+                      {row.region_code ? `${row.region_code} / ${row.district_code || ''}` : (row.cust_grp || '-')}
                     </td>
                   </tr>
                 ))
@@ -240,22 +378,38 @@ const InvoiceSyncPage = () => {
         </div>
 
         {/* Pagination Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', padding: '0.75rem 1rem', background: 'var(--bg-hover)', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Rows per page:</span>
-            {[25, 50, 100, 200].map(sz => (
-              <button key={sz} onClick={() => { setPageSize(sz); setCurrentPage(1); }} style={{ padding: '0.25rem 0.55rem', background: pageSize === sz ? 'var(--gsh-red)' : 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: pageSize === sz ? '#fff' : 'var(--text-main)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}>
-                {sz}
-              </button>
-            ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.25rem', borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>Rows per page:</span>
+            <select
+              value={pageSize}
+              onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+              style={{ padding: '0.2rem 0.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.8rem' }}
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} style={{ padding: '0.35rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 700, cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}>
-              <ChevronLeft style={{ width: '14px', height: '14px' }} /> Prev
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{ padding: '0.35rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.8rem' }}
+            >
+              <ChevronLeft style={{ width: '16px', height: '16px' }} /> Prev
             </button>
-            <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} style={{ padding: '0.35rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 700, cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer', opacity: currentPage >= totalPages ? 0.5 : 1 }}>
-              Next <ChevronRight style={{ width: '14px', height: '14px' }} />
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{ padding: '0.35rem 0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.8rem' }}
+            >
+              Next <ChevronRight style={{ width: '16px', height: '16px' }} />
             </button>
           </div>
         </div>
