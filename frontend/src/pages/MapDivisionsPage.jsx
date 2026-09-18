@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   Network, Search, Plus, Eye, Edit2, Trash2, 
-  CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, AlertTriangle, Database, Calendar, Package
+  CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, Package, Link2, X
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -13,8 +13,8 @@ const FISCAL_YEARS = [
   'All Years'
 ];
 
-// ─── Searchable Range Select Dropdown Component for Table Edit Rows ───
-const SearchableRangeSelect = ({ value, onChange, availableRanges }) => {
+// ─── High-Contrast Searchable Range Select Dropdown for Table & Modals ───
+const SearchableRangeSelect = ({ value, onChange, availableRanges, placeholder = "Select Range..." }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [filterSearch, setFilterSearch] = useState('');
   const containerRef = useRef(null);
@@ -31,36 +31,37 @@ const SearchableRangeSelect = ({ value, onChange, availableRanges }) => {
 
   const filtered = useMemo(() => {
     if (!filterSearch.trim()) return availableRanges;
-    return availableRanges.filter(r => r.toLowerCase().includes(filterSearch.toLowerCase().trim()));
+    return availableRanges.filter(r => r && r.toLowerCase().includes(filterSearch.toLowerCase().trim()));
   }, [availableRanges, filterSearch]);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: '200px' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', minWidth: '220px' }}>
       <div 
         onClick={() => setIsOpen(o => !o)}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.45rem 0.65rem', background: 'var(--bg-primary)',
-          border: '1.5px solid var(--gsh-teal)', borderRadius: 'var(--radius-xs)',
-          color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 700,
-          cursor: 'pointer', userSelect: 'none'
+          padding: '0.45rem 0.75rem', background: 'var(--bg-card, #ffffff)',
+          border: '1.5px solid #00a896', borderRadius: '6px',
+          color: 'var(--text-main, #0f172a)', fontSize: '0.85rem', fontWeight: 700,
+          cursor: 'pointer', userSelect: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: value ? 'var(--gsh-teal)' : 'var(--text-subtle)' }}>
-          {value || 'Select Range...'}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: value ? '#00a896' : 'var(--text-muted, #64748b)' }}>
+          {value || placeholder}
         </span>
+        <span style={{ fontSize: '0.7rem', color: '#00a896', marginLeft: '0.4rem' }}>▼</span>
       </div>
 
       {isOpen && (
         <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
-          marginTop: '0.25rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-xs)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-          padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem',
-          maxHeight: '220px'
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 99999,
+          marginTop: '0.35rem', background: 'var(--bg-card, #ffffff)', border: '1.5px solid #00a896',
+          borderRadius: '8px', boxShadow: '0 14px 35px rgba(0,0,0,0.25)',
+          padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem',
+          maxHeight: '260px'
         }}>
           <div style={{ position: 'relative' }}>
-            <Search style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', width: '13px', height: '13px', color: 'var(--text-subtle)' }} />
+            <Search style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: '#64748b' }} />
             <input
               type="text"
               placeholder="Search Range..."
@@ -68,38 +69,54 @@ const SearchableRangeSelect = ({ value, onChange, availableRanges }) => {
               onChange={e => setFilterSearch(e.target.value)}
               autoFocus
               style={{
-                width: '100%', padding: '0.35rem 0.5rem 0.35rem 1.8rem',
-                background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
-                borderRadius: '4px', color: 'var(--text-main)', fontSize: '0.78rem', outline: 'none', boxSizing: 'border-box'
+                width: '100%', padding: '0.4rem 0.5rem 0.4rem 2rem',
+                background: 'var(--bg-primary, #f8fafc)', border: '1px solid #cbd5e1',
+                borderRadius: '5px', color: 'var(--text-main, #0f172a)', fontSize: '0.82rem', fontWeight: 600, outline: 'none', boxSizing: 'border-box'
               }}
             />
           </div>
 
-          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+              <div style={{ padding: '0.6rem', fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
                 No range matching "{filterSearch}"
               </div>
             ) : (
-              filtered.map((rName, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    onChange(rName);
-                    setIsOpen(false);
-                    setFilterSearch('');
-                  }}
-                  style={{
-                    padding: '0.35rem 0.6rem', borderRadius: '4px',
-                    fontSize: '0.8rem', fontWeight: 700,
-                    color: value === rName ? '#fff' : 'var(--text-main)',
-                    background: value === rName ? 'var(--gsh-teal)' : 'transparent',
-                    cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                  }}
-                >
-                  {rName}
-                </div>
-              ))
+              filtered.map((rName, idx) => {
+                const isSelected = value === rName;
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      onChange(rName);
+                      setIsOpen(false);
+                      setFilterSearch('');
+                    }}
+                    style={{
+                      padding: '0.45rem 0.75rem', borderRadius: '5px',
+                      fontSize: '0.825rem', fontWeight: 700,
+                      color: isSelected ? '#ffffff' : 'var(--text-main, #0f172a)',
+                      background: isSelected ? '#00a896' : 'transparent',
+                      cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      transition: 'background 0.15s ease'
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(0, 168, 150, 0.12)';
+                        e.currentTarget.style.color = '#00a896';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = 'var(--text-main, #0f172a)';
+                      }
+                    }}
+                  >
+                    {rName}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -121,11 +138,16 @@ const MapDivisionsPage = () => {
   const [pageSize, setPageSize] = useState(25);
 
   // Modals state
-  const [quickAddModal, setQuickAddModal] = useState(null);
-  const [viewModalType, setViewModalType] = useState(null);
-  const [quickAddForm, setQuickAddForm] = useState({ sales_group: '', range_name: '' });
+  // Types: 'add_sales_group' | 'add_range' | 'add_mapping'
+  const [activeModal, setActiveModal] = useState(null);
+  const [viewModalType, setViewModalType] = useState(null); // 'sales_group' | 'range'
 
-  // Inline edit state for main datatable
+  // Modal forms
+  const [salesGroupInput, setSalesGroupInput] = useState('');
+  const [rangeInput, setRangeInput] = useState('');
+  const [mappingForm, setMappingForm] = useState({ sales_group: '', range_name: '' });
+
+  // Inline edit state for main datatable (tracked by unique row id)
   const [inlineEditId, setInlineEditId] = useState(null);
   const [inlineForm, setInlineForm] = useState({ sales_group: '', range_name: '' });
 
@@ -175,7 +197,7 @@ const MapDivisionsPage = () => {
     }
   };
 
-  // Derived Analytics & Counts
+  // Derived Analytics & Unique Lists
   const nextPrimaryId = useMemo(() => {
     if (!Array.isArray(mappings) || mappings.length === 0) return 1;
     const validIds = mappings.map(m => Number(m.id) || 0).filter(id => !isNaN(id) && id > 0);
@@ -199,39 +221,82 @@ const MapDivisionsPage = () => {
     return Array.from(set).sort();
   }, [mappings]);
 
-  // Quick Add Handlers
-  const handleOpenQuickAdd = (type) => {
-    setQuickAddModal(type);
-    setQuickAddForm({ sales_group: '', range_name: '' });
-  };
+  // ─── Modal Submissions ───
 
-  const handleSaveQuickAdd = async (e) => {
+  // 1. Add Sales Group
+  const handleSaveSalesGroup = async (e) => {
     e.preventDefault();
-    if (!quickAddForm.sales_group.trim() || !quickAddForm.range_name.trim()) {
-      showToast('Both Sales Group and Range name are required.', 'error');
+    if (!salesGroupInput.trim()) {
+      showToast('Please enter a Sales Group name.', 'error');
       return;
     }
-
     try {
-      await api.post('/division-mappings', quickAddForm);
-      showToast(`✅ New Mapping (ID #${nextPrimaryId}) created successfully!`);
-      setQuickAddModal(null);
+      await api.post('/division-mappings/add-sales-group', { sales_group: salesGroupInput.trim() });
+      showToast(`✅ Sales Group "${salesGroupInput.trim()}" added successfully!`);
+      setSalesGroupInput('');
+      setActiveModal(null);
       loadMappings();
     } catch {
-      showToast('Failed to create new mapping.', 'error');
+      showToast('Failed to add Sales Group.', 'error');
     }
   };
 
-  // Inline Table Edit Handlers
-  const handleStartInlineEdit = (item) => {
-    setInlineEditId(item.id);
-    setInlineForm({ sales_group: item.sales_group, range_name: item.range_name });
+  // 2. Add Range
+  const handleSaveRange = async (e) => {
+    e.preventDefault();
+    if (!rangeInput.trim()) {
+      showToast('Please enter a Range name.', 'error');
+      return;
+    }
+    try {
+      await api.post('/division-mappings/add-range', { range_name: rangeInput.trim() });
+      showToast(`✅ Range "${rangeInput.trim()}" registered successfully!`);
+      setRangeInput('');
+      setActiveModal(null);
+      loadMappings();
+    } catch {
+      showToast('Failed to add Range.', 'error');
+    }
   };
 
-  const handleSaveInlineEdit = async (id) => {
+  // 3. Add / Map Sales Group to Range
+  const handleSaveMapping = async (e) => {
+    e.preventDefault();
+    if (!mappingForm.sales_group.trim() || !mappingForm.range_name.trim()) {
+      showToast('Please select/enter both Sales Group and Range.', 'error');
+      return;
+    }
     try {
-      await api.put(`/division-mappings/${id}`, inlineForm);
-      showToast('✅ Division mapping updated!');
+      await api.post('/division-mappings', {
+        sales_group: mappingForm.sales_group.trim(),
+        range_name: mappingForm.range_name.trim()
+      });
+      showToast(`✅ Mapped "${mappingForm.sales_group.trim()}" to "${mappingForm.range_name.trim()}"!`);
+      setMappingForm({ sales_group: '', range_name: '' });
+      setActiveModal(null);
+      loadMappings();
+    } catch {
+      showToast('Failed to save mapping.', 'error');
+    }
+  };
+
+  // ─── Inline Table Edit Handlers ───
+  const handleStartInlineEdit = (row) => {
+    setInlineEditId(row.id);
+    setInlineForm({ sales_group: row.sales_group, range_name: row.range_name });
+  };
+
+  const handleSaveInlineEdit = async (row) => {
+    if (!inlineForm.range_name.trim()) {
+      showToast('Range name cannot be empty.', 'error');
+      return;
+    }
+    try {
+      await api.put(`/division-mappings/${row.mapping_id || row.id}`, {
+        sales_group: row.sales_group,
+        range_name: inlineForm.range_name.trim()
+      });
+      showToast(`✅ Sales Group "${row.sales_group}" mapped to Range "${inlineForm.range_name.trim()}"!`);
       setInlineEditId(null);
       loadMappings();
     } catch {
@@ -239,10 +304,10 @@ const MapDivisionsPage = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm(`Delete mapping ID #${id}?`)) return;
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Delete mapping for "${row.sales_group}" (ID #${row.id})?`)) return;
     try {
-      await api.delete(`/division-mappings/${id}`);
+      await api.delete(`/division-mappings/${row.mapping_id || row.id}`);
       showToast('Mapping deleted successfully.');
       loadMappings();
     } catch {
@@ -274,7 +339,7 @@ const MapDivisionsPage = () => {
       
       {/* Toast Notification */}
       {toast && (
-        <div style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 99999, padding: '0.75rem 1.25rem', borderRadius: 'var(--radius-sm)', background: toast.type === 'success' ? '#10b981' : (toast.type === 'info' ? 'var(--gsh-teal)' : '#ef4444'), color: '#fff', fontWeight: 700, fontSize: '0.85rem', boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 999999, padding: '0.75rem 1.25rem', borderRadius: 'var(--radius-sm)', background: toast.type === 'success' ? '#10b981' : (toast.type === 'info' ? 'var(--gsh-teal)' : '#ef4444'), color: '#fff', fontWeight: 700, fontSize: '0.85rem', boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {toast.type === 'success' ? <CheckCircle style={{ width: '18px', height: '18px' }} /> : <AlertCircle style={{ width: '18px', height: '18px' }} />}
           {toast.msg}
         </div>
@@ -288,21 +353,33 @@ const MapDivisionsPage = () => {
             Map Divisions — Sales Group, Part No. & Product (SKU) Master
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Configure Sales Group, Range division mappings, Part No., and Product (SKU) details from total_budget database table.
+            Configure Sales Group master names, Target Range categories, and map Sales Groups to Ranges.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-          <button onClick={handleAutoSync} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(200,16,46,0.25)' }}>
-            <Database style={{ width: '15px', height: '15px' }} /> Auto-Sync from total_budget
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Dedicated + Add Mapping Button */}
+          <button 
+            onClick={() => {
+              setMappingForm({ sales_group: '', range_name: '' });
+              setActiveModal('add_mapping');
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.1rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+          >
+            <Link2 style={{ width: '16px', height: '16px' }} /> + Add Mapping
           </button>
+
+          <button onClick={handleAutoSync} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-sm)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(200,16,46,0.25)' }}>
+            <RefreshCw style={{ width: '15px', height: '15px' }} /> Auto-Sync from Budget
+          </button>
+
           <button onClick={loadMappings} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
             <RefreshCw style={{ width: '15px', height: '15px' }} /> Refresh
           </button>
         </div>
       </div>
 
-      {/* ─── TOP 4 KPI CARDS (Sales Group, Range, Mapped Count, Unmapped Count) ─── */}
+      {/* ─── TOP 4 KPI CARDS ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
         
         {/* CARD 1: Total Sales Group */}
@@ -314,19 +391,22 @@ const MapDivisionsPage = () => {
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  Total Sales Group
+                  TOTAL SALES GROUP
                 </span>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unique Sales Groups mapped</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unique Sales Groups</p>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <button
-                onClick={() => handleOpenQuickAdd('sales_group')}
-                title="Add New Sales Group Entry"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.35rem 0.6rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+                onClick={() => {
+                  setSalesGroupInput('');
+                  setActiveModal('add_sales_group');
+                }}
+                title="Add New Sales Group Category"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.35rem 0.65rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', boxShadow: '0 2px 6px rgba(200,16,46,0.25)' }}
               >
-                <Plus style={{ width: '13px', height: '13px' }} /> Add
+                <Plus style={{ width: '13px', height: '13px' }} /> + Add
               </button>
               
               <button
@@ -358,19 +438,22 @@ const MapDivisionsPage = () => {
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  Total Range
+                  TOTAL RANGE
                 </span>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target Range categories created</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target Range categories</p>
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <button
-                onClick={() => handleOpenQuickAdd('range')}
-                title="Add New Range Entry"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.35rem 0.6rem', background: 'linear-gradient(135deg, #00a896 0%, #00897b 100%)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+                onClick={() => {
+                  setRangeInput('');
+                  setActiveModal('add_range');
+                }}
+                title="Add New Target Range Category"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.35rem 0.65rem', background: 'linear-gradient(135deg, #00a896 0%, #00897b 100%)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,168,150,0.25)' }}
               >
-                <Plus style={{ width: '13px', height: '13px' }} /> Add
+                <Plus style={{ width: '13px', height: '13px' }} /> + Add
               </button>
               
               <button
@@ -402,7 +485,7 @@ const MapDivisionsPage = () => {
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  Mapped Count
+                  MAPPED COUNT
                 </span>
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>total_budget Sales Groups mapped</p>
               </div>
@@ -432,7 +515,7 @@ const MapDivisionsPage = () => {
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  Total Items Count
+                  TOTAL ITEMS COUNT
                 </span>
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mapped Product SKUs / Items</p>
               </div>
@@ -472,7 +555,6 @@ const MapDivisionsPage = () => {
 
           {/* Year Filter Selector Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-card)', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-            <Calendar style={{ width: '16px', height: '16px', color: 'var(--gsh-teal)' }} />
             <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Target Year:</label>
             <select
               value={selectedYear}
@@ -489,7 +571,7 @@ const MapDivisionsPage = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
             <Hash style={{ width: '15px', height: '15px', color: 'var(--gsh-red)' }} />
-            Next Primary ID: <strong style={{ color: 'var(--gsh-red)', fontSize: '0.9rem' }}>#{nextPrimaryId}</strong>
+            Total Rows: <strong style={{ color: 'var(--gsh-red)', fontSize: '0.9rem' }}>{filteredMappings.length}</strong>
           </div>
           <div style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-muted)' }}>
             Showing <strong>{paginatedMappings.length}</strong> of <strong>{filteredMappings.length}</strong> items (Page {currentPage} of {totalPages})
@@ -497,9 +579,9 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* Main Division Mappings Datatable with Part No. & Product (SKU) Columns */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 330px)', overflowY: 'auto' }}>
+      {/* Main Division Mappings Datatable */}
+      <div className="glass-card" style={{ padding: 0, overflow: 'visible' }}>
+        <div style={{ overflowX: 'auto', minHeight: '350px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-hover)', borderBottom: '2px solid var(--border-color)' }}>
               <tr style={{ color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
@@ -516,7 +598,7 @@ const MapDivisionsPage = () => {
               {loading ? (
                 <tr>
                   <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading division mappings & total_budget records...
+                    Loading division mappings & budget records...
                   </td>
                 </tr>
               ) : paginatedMappings.length === 0 ? (
@@ -526,10 +608,10 @@ const MapDivisionsPage = () => {
                   </td>
                 </tr>
               ) : (
-                paginatedMappings.map((row, idx) => {
+                paginatedMappings.map((row) => {
                   const isEditingInline = inlineEditId === row.id;
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', background: isEditingInline ? 'rgba(200,16,46,0.04)' : 'transparent' }}>
+                    <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', background: isEditingInline ? 'rgba(0,168,150,0.06)' : 'transparent' }}>
                       <td style={{ padding: '0.65rem 1rem', fontWeight: 800, color: 'var(--gsh-red)', fontFamily: 'monospace' }}>
                         #{row.id}
                       </td>
@@ -548,7 +630,9 @@ const MapDivisionsPage = () => {
                             onChange={(selectedRange) => setInlineForm(f => ({ ...f, range_name: selectedRange }))}
                           />
                         ) : (
-                          <span style={{ fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.08)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>{row.range_name}</span>
+                          <span style={{ fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.08)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                            {row.range_name}
+                          </span>
                         )}
                       </td>
 
@@ -571,7 +655,7 @@ const MapDivisionsPage = () => {
                       <td style={{ padding: '0.65rem 1rem', textAlign: 'right' }}>
                         {isEditingInline ? (
                           <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => handleSaveInlineEdit(row.id)} title="Save Changes" style={{ padding: '0.35rem 0.6rem', background: '#10b981', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem' }}>
+                            <button onClick={() => handleSaveInlineEdit(row)} title="Save Changes" style={{ padding: '0.35rem 0.6rem', background: '#10b981', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem' }}>
                               Save
                             </button>
                             <button onClick={() => setInlineEditId(null)} title="Cancel" style={{ padding: '0.35rem 0.6rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', cursor: 'pointer', fontSize: '0.75rem' }}>
@@ -580,10 +664,10 @@ const MapDivisionsPage = () => {
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                            <button onClick={() => handleStartInlineEdit(row)} title="Edit Row" style={{ padding: '0.35rem 0.5rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', cursor: 'pointer' }}>
+                            <button onClick={() => handleStartInlineEdit(row)} title="Edit Range for this row" style={{ padding: '0.35rem 0.5rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', cursor: 'pointer' }}>
                               <Edit2 style={{ width: '14px', height: '14px' }} />
                             </button>
-                            <button onClick={() => handleDelete(row.id)} title="Delete Mapping" style={{ padding: '0.35rem 0.5rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-xs)', color: '#ef4444', cursor: 'pointer' }}>
+                            <button onClick={() => handleDelete(row)} title="Delete Mapping" style={{ padding: '0.35rem 0.5rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-xs)', color: '#ef4444', cursor: 'pointer' }}>
                               <Trash2 style={{ width: '14px', height: '14px' }} />
                             </button>
                           </div>
@@ -655,10 +739,10 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* ─── MODAL 1: QUICK ADD ─── */}
-      {quickAddModal && ReactDOM.createPortal(
+      {/* ─── MODAL 1: ADD SALES GROUP ONLY ─── */}
+      {activeModal === 'add_sales_group' && ReactDOM.createPortal(
         <div 
-          onClick={(e) => { if (e.target === e.currentTarget) setQuickAddModal(null); }}
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveModal(null); }}
           style={{ 
             position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
             zIndex: 999999, background: 'rgba(0, 0, 0, 0.7)', 
@@ -667,58 +751,45 @@ const MapDivisionsPage = () => {
           }}
         >
           <form 
-            onSubmit={handleSaveQuickAdd} 
+            onSubmit={handleSaveSalesGroup} 
             style={{ 
-              width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto',
-              background: 'var(--bg-card)', border: '1px solid var(--border-color)', 
+              width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto',
+              background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
               borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Plus style={{ width: '20px', height: '20px', color: quickAddModal === 'sales_group' ? 'var(--gsh-red)' : 'var(--gsh-teal)' }} />
-                Add New {quickAddModal === 'sales_group' ? 'Sales Group' : 'Range'} Entry
+                <Layers style={{ width: '20px', height: '20px', color: 'var(--gsh-red)' }} />
+                Add New Sales Group
               </h3>
-              <button type="button" onClick={() => setQuickAddModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)', padding: '0.2rem' }}>✕</button>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}>✕</button>
             </div>
 
-            <div style={{ padding: '0.65rem 0.85rem', background: 'rgba(200,16,46,0.06)', borderRadius: 'var(--radius-xs)', border: '1px dashed var(--gsh-red)', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-subtle)' }}>Assigned Primary ID:</span>
-              <span style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--gsh-red)', fontFamily: 'monospace' }}>#{nextPrimaryId}</span>
-            </div>
+            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
+              Create a new Sales Group master category. You can later map this Sales Group to a Target Range.
+            </p>
 
-            <div style={{ marginBottom: '1rem' }}>
+            <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
                 Sales Group Name <span style={{ color: 'var(--gsh-red)' }}>*</span>
               </label>
               <input
                 type="text"
-                value={quickAddForm.sales_group}
-                onChange={e => setQuickAddForm(f => ({ ...f, sales_group: e.target.value }))}
-                placeholder="e.g. ADCOCK, ROCKET SAL, B BRAUN..."
-                style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
-                Range Name <span style={{ color: 'var(--gsh-red)' }}>*</span>
-              </label>
-              <input
-                type="text"
-                value={quickAddForm.range_name}
-                onChange={e => setQuickAddForm(f => ({ ...f, range_name: e.target.value }))}
-                placeholder="e.g. OAKNET, ALPAYA, SURGICAL CONSUMABLES..."
-                style={{ width: '100%', padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }}
+                value={salesGroupInput}
+                onChange={e => setSalesGroupInput(e.target.value)}
+                placeholder="e.g. ABBOTT, ROCKET SAL, B BRAUN..."
+                autoFocus
+                style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'var(--bg-primary)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
-              <button type="button" onClick={() => setQuickAddModal(null)} style={{ padding: '0.6rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ padding: '0.6rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
                 Cancel
               </button>
               <button type="submit" style={{ padding: '0.6rem 1.4rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(200,16,46,0.25)' }}>
-                Insert Entry (ID #{nextPrimaryId})
+                Add Sales Group
               </button>
             </div>
           </form>
@@ -726,7 +797,161 @@ const MapDivisionsPage = () => {
         document.body
       )}
 
-      {/* ─── MODAL 2: VIEW ALL (Sales Groups or Ranges) ─── */}
+      {/* ─── MODAL 2: ADD RANGE ONLY ─── */}
+      {activeModal === 'add_range' && ReactDOM.createPortal(
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveModal(null); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            zIndex: 999999, background: 'rgba(0, 0, 0, 0.7)', 
+            backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', padding: '1rem', boxSizing: 'border-box'
+          }}
+        >
+          <form 
+            onSubmit={handleSaveRange} 
+            style={{ 
+              width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto',
+              background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
+              borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Tag style={{ width: '20px', height: '20px', color: 'var(--gsh-teal)' }} />
+                Add New Range / Division Category
+              </h3>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}>✕</button>
+            </div>
+
+            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
+              Create a new Target Range / Division name. This will become available in all mapping dropdowns.
+            </p>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
+                Range Name <span style={{ color: 'var(--gsh-teal)' }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={rangeInput}
+                onChange={e => setRangeInput(e.target.value)}
+                placeholder="e.g. SUR CONSUMABLES, ARROWIL A5, OAKNET..."
+                autoFocus
+                style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'var(--bg-primary)', border: '1.5px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ padding: '0.6rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="submit" style={{ padding: '0.6rem 1.4rem', background: 'linear-gradient(135deg, #00a896 0%, #00897b 100%)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,168,150,0.25)' }}>
+                Add Range Category
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── MODAL 3: MAP SALES GROUP TO RANGE ─── */}
+      {activeModal === 'add_mapping' && ReactDOM.createPortal(
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveModal(null); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            zIndex: 999999, background: 'rgba(0, 0, 0, 0.7)', 
+            backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', padding: '1rem', boxSizing: 'border-box'
+          }}
+        >
+          <form 
+            onSubmit={handleSaveMapping} 
+            style={{ 
+              width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto',
+              background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
+              borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Link2 style={{ width: '20px', height: '20px', color: '#10b981' }} />
+                Map Sales Group to Range
+              </h3>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}>✕</button>
+            </div>
+
+            <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+              Connect a Sales Group to a Target Range. This updates all associated SKUs in the total_budget table.
+            </p>
+
+            {/* Sales Group Select or Custom Input */}
+            <div style={{ marginBottom: '1.2rem' }}>
+              <label style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
+                1. Select / Enter Sales Group <span style={{ color: 'var(--gsh-red)' }}>*</span>
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={mappingForm.sales_group}
+                  onChange={e => setMappingForm(f => ({ ...f, sales_group: e.target.value }))}
+                  placeholder="Type or pick Sales Group..."
+                  style={{ flex: 1, padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none' }}
+                />
+                <select
+                  onChange={e => { if (e.target.value) setMappingForm(f => ({ ...f, sales_group: e.target.value })); }}
+                  defaultValue=""
+                  style={{ padding: '0.6rem 0.5rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="" disabled>Choose Existing...</option>
+                  {uniqueSalesGroups.map(sg => (
+                    <option key={sg} value={sg}>{sg}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Range Select or Custom Input */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.35rem' }}>
+                2. Select / Enter Target Range <span style={{ color: 'var(--gsh-teal)' }}>*</span>
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={mappingForm.range_name}
+                  onChange={e => setMappingForm(f => ({ ...f, range_name: e.target.value }))}
+                  placeholder="Type or pick Range..."
+                  style={{ flex: 1, padding: '0.6rem 0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none' }}
+                />
+                <select
+                  onChange={e => { if (e.target.value) setMappingForm(f => ({ ...f, range_name: e.target.value })); }}
+                  defaultValue=""
+                  style={{ padding: '0.6rem 0.5rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="" disabled>Choose Existing...</option>
+                  {uniqueRanges.map(rg => (
+                    <option key={rg} value={rg}>{rg}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ padding: '0.6rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="submit" style={{ padding: '0.6rem 1.4rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}>
+                Save Mapping
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── MODAL 4: VIEW ALL (Sales Groups or Ranges) ─── */}
       {viewModalType && ReactDOM.createPortal(
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setViewModalType(null); }}
@@ -740,24 +965,24 @@ const MapDivisionsPage = () => {
           <div 
             style={{ 
               width: '100%', maxWidth: '560px', maxHeight: '85vh', display: 'flex', flexDirection: 'column',
-              background: 'var(--bg-card)', border: '1px solid var(--border-color)', 
+              background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
               borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Eye style={{ width: '20px', height: '20px', color: viewModalType === 'sales_group' ? 'var(--gsh-red)' : 'var(--gsh-teal)' }} />
-                All Mapped {viewModalType === 'sales_group' ? 'Sales Groups' : 'Ranges'} ({viewModalType === 'sales_group' ? uniqueSalesGroups.length : uniqueRanges.length})
+                All {viewModalType === 'sales_group' ? 'Sales Groups' : 'Ranges'} ({viewModalType === 'sales_group' ? uniqueSalesGroups.length : uniqueRanges.length})
               </h3>
-              <button type="button" onClick={() => setViewModalType(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)', padding: '0.2rem' }}>✕</button>
+              <button type="button" onClick={() => setViewModalType(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}>✕</button>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 0' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', padding: '0.5rem 0', maxHeight: '50vh' }}>
               {(viewModalType === 'sales_group' ? uniqueSalesGroups : uniqueRanges).map((item, idx) => (
                 <span
                   key={idx}
                   style={{
-                    padding: '0.35rem 0.75rem',
+                    padding: '0.4rem 0.8rem',
                     borderRadius: 'var(--radius-xs)',
                     fontSize: '0.825rem',
                     fontWeight: 700,

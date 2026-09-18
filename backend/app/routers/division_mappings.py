@@ -147,19 +147,23 @@ def get_mapping_stats():
     init_division_mappings_table()
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        # Total unique Sales Groups in total_budget
+        # Total unique Sales Groups in total_budget and division_mappings
         cursor.execute("""
-            SELECT COUNT(DISTINCT TRIM(sales_group)) as cnt 
-            FROM total_budget 
-            WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
+            SELECT COUNT(DISTINCT sg) as cnt FROM (
+                SELECT TRIM(sales_group) as sg FROM total_budget WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
+                UNION
+                SELECT TRIM(sales_group) as sg FROM division_mappings WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
+            ) t;
         """)
         tb_sg_count = cursor.fetchone()['cnt'] or 0
 
-        # Total unique Ranges in division_mappings
+        # Total unique Ranges in division_mappings and total_budget
         cursor.execute("""
-            SELECT COUNT(DISTINCT TRIM(range_name)) as cnt 
-            FROM division_mappings 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '';
+            SELECT COUNT(DISTINCT rn) as cnt FROM (
+                SELECT TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
+                UNION
+                SELECT TRIM(range_name) as rn FROM total_budget WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
+            ) t;
         """)
         div_range_count = cursor.fetchone()['cnt'] or 0
 
@@ -207,7 +211,6 @@ def sync_mappings_from_budget():
     conn = get_db_connection()
     synced_count = 0
     with conn.cursor() as cursor:
-        # Fetch all distinct (sales_group, range_name) pairs from total_budget
         cursor.execute("""
             SELECT DISTINCT TRIM(sales_group) as s_grp, TRIM(range_name) as r_name
             FROM total_budget
@@ -245,9 +248,9 @@ def list_division_mappings(
     params = []
 
     if search:
-        where_clauses.append("(b.sales_group LIKE %s OR b.range_name LIKE %s OR b.part_no LIKE %s OR b.product_sku LIKE %s)")
+        where_clauses.append("(b.sales_group LIKE %s OR b.range_name LIKE %s OR b.part_no LIKE %s OR b.product_sku LIKE %s OR m.range_name LIKE %s)")
         like_str = f"%{search}%"
-        params.extend([like_str, like_str, like_str, like_str])
+        params.extend([like_str, like_str, like_str, like_str, like_str])
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -255,9 +258,10 @@ def list_division_mappings(
         cursor.execute(f"""
             SELECT 
                 b.id as budget_id,
-                COALESCE(m.id, b.id) as id,
+                b.id as id,
+                COALESCE(m.id, 0) as mapping_id,
                 TRIM(b.sales_group) as sales_group,
-                TRIM(b.range_name) as range_name,
+                TRIM(COALESCE(m.range_name, b.range_name)) as range_name,
                 TRIM(COALESCE(b.part_no, '')) as part_no,
                 TRIM(COALESCE(b.product_sku, '')) as product_sku,
                 DATE_FORMAT(COALESCE(m.updated_at, NOW()), '%%Y-%%m-%%d %%H:%%i') as updated_at
@@ -272,36 +276,136 @@ def list_division_mappings(
 
 
 @router.post("")
-def create_division_mapping(
-    sales_group: str = Body(..., embed=True),
-    range_name: str = Body(..., embed=True)
-):
+def create_division_mapping(payload: dict = Body(...)):
+    init_division_mappings_table()
+    sales_group = str(payload.get("sales_group") or "").strip()
+    range_name = str(payload.get("range_name") or "").strip()
+    if not sales_group or not range_name:
+        raise HTTPException(status_code=400, detail="Sales group and range name cannot be empty.")
+
     conn = get_db_connection()
-    with conn.cursor() as cursor:
-        cursor.execute("""
-            INSERT INTO division_mappings (sales_group, range_name)
-            VALUES (%s, %s);
-        """, (sales_group, range_name))
-        new_id = cursor.lastrowid
-    conn.close()
-    return {"status": "success", "id": new_id, "sales_group": sales_group, "range_name": range_name}
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+            """, (sales_group, range_name))
+            new_id = cursor.lastrowid
+
+            # Also sync total_budget
+            try:
+                cursor.execute("""
+                    UPDATE total_budget
+                    SET range_name = %s
+                    WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));
+                """, (range_name, sales_group))
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "id": new_id,
+        "sales_group": sales_group,
+        "range_name": range_name,
+        "message": f"Mapping created/updated for '{sales_group}' -> '{range_name}'."
+    }
+
+
+@router.post("/add-sales-group")
+def add_new_sales_group(payload: dict = Body(...)):
+    init_division_mappings_table()
+    sales_group = str(payload.get("sales_group") or "").strip()
+    default_range = str(payload.get("default_range") or "Unassigned").strip()
+    if not sales_group:
+        raise HTTPException(status_code=400, detail="Sales Group name cannot be empty.")
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE sales_group = VALUES(sales_group);
+            """, (sales_group, default_range))
+            new_id = cursor.lastrowid
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "id": new_id,
+        "sales_group": sales_group,
+        "range_name": default_range,
+        "message": f"New Sales Group '{sales_group}' added successfully!"
+    }
+
+
+@router.post("/add-range")
+def add_new_range(payload: dict = Body(...)):
+    init_division_mappings_table()
+    range_name = str(payload.get("range_name") or "").strip()
+    if not range_name:
+        raise HTTPException(status_code=400, detail="Range name cannot be empty.")
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+            """, ("(blank)", range_name))
+            new_id = cursor.lastrowid
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "id": new_id,
+        "range_name": range_name,
+        "message": f"New Range '{range_name}' category registered successfully!"
+    }
 
 
 @router.put("/{mapping_id}")
-def update_division_mapping(
-    mapping_id: int,
-    sales_group: str = Body(..., embed=True),
-    range_name: str = Body(..., embed=True)
-):
+def update_division_mapping(mapping_id: int, payload: dict = Body(...)):
+    sales_group = str(payload.get("sales_group") or "").strip()
+    range_name = str(payload.get("range_name") or "").strip()
+    if not sales_group or not range_name:
+        raise HTTPException(status_code=400, detail="Sales group and range name cannot be empty.")
+
     conn = get_db_connection()
-    with conn.cursor() as cursor:
-        cursor.execute("""
-            UPDATE division_mappings
-            SET sales_group = %s, range_name = %s
-            WHERE id = %s;
-        """, (sales_group, range_name, mapping_id))
-    conn.close()
-    return {"status": "success", "id": mapping_id, "sales_group": sales_group, "range_name": range_name}
+    try:
+        with conn.cursor() as cursor:
+            # Upsert in division_mappings
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+            """, (sales_group, range_name))
+
+            # Update all matching rows in total_budget
+            try:
+                cursor.execute("""
+                    UPDATE total_budget
+                    SET range_name = %s
+                    WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));
+                """, (range_name, sales_group))
+            except Exception:
+                pass
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "id": mapping_id,
+        "sales_group": sales_group,
+        "range_name": range_name,
+        "message": f"Updated Sales Group '{sales_group}' mapped Range to '{range_name}'."
+    }
 
 
 @router.delete("/{mapping_id}")
