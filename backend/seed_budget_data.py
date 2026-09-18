@@ -33,8 +33,10 @@ def seed_total_budget(conn):
     # Row 0 is header: ['S. No.', 'Cost Center', 'Sales Group', 'Range', 'Part No.', 'Product (SKU)', 'Pack', Apr...Mar, Total]
     rows_to_insert = []
     for idx, row in df.iloc[1:].iterrows():
-        # Skip empty rows
-        if pd.isna(row[1]) and pd.isna(row[2]) and pd.isna(row[5]):
+        # Skip empty or header rows
+        if (pd.isna(row[1]) and pd.isna(row[2]) and pd.isna(row[5])) or \
+           (str(row[2]).strip().lower() in ['sales group', 'sales_group']) or \
+           (str(row[1]).strip().lower() in ['cost center', 'cost_center']):
             continue
             
         s_no = int(row[0]) if pd.notna(row[0]) and str(row[0]).isdigit() else None
