@@ -19,6 +19,9 @@ try:
     local_client = os.path.join(project_root, "instantclient", "instantclient_19_23")
 
     client_dirs = [
+        "/opt/oracle/instantclient_19_23",
+        "/opt/oracle/instantclient",
+        "/usr/lib/oracle/19.23/client64/lib",
         local_client,
         r"C:\instantclient_19_23",
         r"C:\instantclient_21_13",
@@ -32,6 +35,11 @@ try:
                 break
             except Exception:
                 pass
+    else:
+        try:
+            oracledb.init_oracle_client()
+        except Exception:
+            pass
 except Exception:
     pass
 
