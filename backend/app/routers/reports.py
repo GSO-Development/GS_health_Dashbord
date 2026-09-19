@@ -160,10 +160,26 @@ MONTH_NUM_MAP = {
 def get_total_range_fy(
     month: Optional[str] = Query("july"),
     date: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     search: Optional[str] = Query(None)
 ):
     selected_month = month.lower().strip() if month and month.lower().strip() in FY_MONTH_ORDER else "july"
-    filter_date = date.strip() if date and date.strip() else None
+    
+    s_date = start_date.strip() if start_date and start_date.strip() else None
+    e_date = end_date.strip() if end_date and end_date.strip() else None
+    single_d = date.strip() if date and date.strip() else None
+    if not s_date and single_d:
+        s_date = single_d
+        e_date = single_d
+    if s_date and not e_date:
+        e_date = s_date
+    elif e_date and not s_date:
+        s_date = e_date
+
+    has_date_filter = s_date is not None
+    if has_date_filter and s_date > e_date:
+        s_date, e_date = e_date, s_date
     
     idx = FY_MONTH_ORDER.index(selected_month)
     cum_months = FY_MONTH_ORDER[:idx + 1]
@@ -235,7 +251,7 @@ def get_total_range_fy(
                 sg_b_map[sg_key] = r
 
         # 3. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table joining division_mappings
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT 
                     TRIM(i.catalog_group) as s_grp,
@@ -245,9 +261,9 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 LEFT JOIN division_mappings m ON LOWER(TRIM(i.catalog_group)) = LOWER(TRIM(m.sales_group))
-                WHERE DATE(i.invoice_date) = %s
+                WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s
                 GROUP BY s_grp, part_no, r_name, inv_m;
-            """, (filter_date,))
+            """, (s_date, e_date))
         else:
             cursor.execute("""
                 SELECT 

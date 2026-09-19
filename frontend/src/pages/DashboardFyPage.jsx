@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Info, Calculator, ShieldCheck, Eye, EyeOff, Layers, Package, FileCheck } from 'lucide-react';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const toMn = (val) => {
@@ -83,17 +85,37 @@ const CircularGauge = ({ percentage, variance, size = 120, activeColor = '#10b98
   );
 };
 
+const getCurrentMonthKey = () => {
+  const curMonthIndex = new Date().getMonth(); // 0 = Jan, 1 = Feb, ... 8 = Sep, 11 = Dec
+  const monthKeys = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+  return monthKeys[curMonthIndex] || 'september';
+};
+
 const DashboardFyPage = () => {
-  const [selectedMonth, setSelectedMonth] = useState('july');
-  const [selectedDate, setSelectedDate] = useState(null);
+  const { isAdmin } = useAuth();
+  const [showAdminFormulas, setShowAdminFormulas] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth };
-      if (selectedDate) params.date = selectedDate;
+      const params = { month: selectedMonth, backlog_mode: backlogMode };
+      if (startDate && endDate) {
+        if (startDate === endDate) {
+          params.date = startDate;
+        } else {
+          params.start_date = startDate;
+          params.end_date = endDate;
+        }
+      }
 
       const res = await api.get('/reports/dashboard-fy-overview', { params });
       if (res.data) {
@@ -107,7 +129,7 @@ const DashboardFyPage = () => {
 
   useEffect(() => {
     loadData();
-  }, [selectedMonth, selectedDate]);
+  }, [selectedMonth, startDate, endDate, backlogMode]);
 
   // Data helpers
   const tb = data?.total_budget || { target: 1092090000, actual: 1200681486.76, pct: 110, variance: 108591486.76 };
@@ -123,32 +145,213 @@ const DashboardFyPage = () => {
   const drMax = Math.max(dr.actual, dr.target) * 1.1;
   const anMax = Math.max(an.actual, an.target) * 1.05;
 
+const AdminFormulaBox = ({ targetFormula, actualFormula, dataSource }) => (
+  <div style={{
+    background: '#f8fafc',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    padding: '0.55rem 0.75rem',
+    marginBottom: '0.85rem',
+    fontSize: '0.725rem',
+    lineHeight: 1.45,
+    borderLeft: '3.5px solid var(--gsh-teal)'
+  }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+      <span style={{ fontWeight: 800, color: 'var(--gsh-teal)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.725rem' }}>
+        <Calculator style={{ width: '13px', height: '13px' }} />
+        Finance Formula (Admin Guide)
+      </span>
+      <span style={{ fontSize: '0.65rem', background: '#e2e8f0', color: '#475569', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 700 }}>
+        {dataSource}
+      </span>
+    </div>
+    <div style={{ color: '#334155' }}>
+      <div style={{ marginBottom: '0.15rem' }}><strong style={{ color: '#c8102e' }}>Target:</strong> {targetFormula}</div>
+      <div><strong style={{ color: '#059669' }}>Actual:</strong> {actualFormula}</div>
+    </div>
+  </div>
+);
+
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       
-      {/* ─── Header ─── */}
+      {/* ─── Header with Admin Formula Toggle ─── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-          Dashboard FY 2026/27 Overview ({data?.month_label || 'July 2026'})
-        </h2>
+        <div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            Dashboard FY 2026/27 Overview ({data?.month_label || 'Current Month'})
+            {loading && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <RefreshCw style={{ width: '12px', height: '12px', animation: 'spin 1s linear infinite' }} />
+                Loading...
+              </span>
+            )}
+          </h2>
+          <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>
+            Executive sales target vs actual performance overview.
+          </p>
+        </div>
+
+        {/* Admin-Only Formula Mode Toggle */}
+        {isAdmin && (
+          <button
+            onClick={() => setShowAdminFormulas(prev => !prev)}
+            style={{
+              padding: '0.45rem 0.85rem',
+              borderRadius: 'var(--radius-xs)',
+              border: '1px solid var(--border-color)',
+              background: showAdminFormulas ? 'rgba(0,168,150,0.1)' : 'var(--bg-card)',
+              color: showAdminFormulas ? 'var(--gsh-teal)' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+            }}
+          >
+            <ShieldCheck style={{ width: '15px', height: '15px' }} />
+            {showAdminFormulas ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+            Admin Formula Guide: {showAdminFormulas ? 'ON' : 'OFF'}
+          </button>
+        )}
+      </div>
+
+      {/* ─── Backlog Calculation Mode Switcher (Visible to BOTH Admin & User) ─── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
+        background: 'var(--bg-card)',
+        padding: '0.65rem 1rem',
+        borderRadius: 'var(--radius-xs)',
+        border: '1px solid var(--border-color)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+        opacity: loading ? 0.8 : 1,
+        transition: 'opacity 0.2s ease'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Layers style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
+            Actuals Calculation Mode:
+          </span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            (Choose whether Actual sales figures include pending order backlog)
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-hover)', padding: '0.25rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <button
+            disabled={loading}
+            onClick={() => setBacklogMode('with')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '4px',
+              border: 'none',
+              background: backlogMode === 'with' ? 'var(--gsh-teal)' : 'transparent',
+              color: backlogMode === 'with' ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Layers style={{ width: '13px', height: '13px' }} />
+            With Backlog (Invoice + Backlog)
+          </button>
+
+          <button
+            disabled={loading}
+            onClick={() => setBacklogMode('without')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '4px',
+              border: 'none',
+              background: backlogMode === 'without' ? '#3b82f6' : 'transparent',
+              color: backlogMode === 'without' ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FileCheck style={{ width: '13px', height: '13px' }} />
+            Without Backlog (Invoices Only)
+          </button>
+
+          <button
+            disabled={loading}
+            onClick={() => setBacklogMode('only')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '4px',
+              border: 'none',
+              background: backlogMode === 'only' ? '#8b5cf6' : 'transparent',
+              color: backlogMode === 'only' ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Package style={{ width: '13px', height: '13px' }} />
+            Only Backlog (Pending Orders)
+          </button>
+        </div>
       </div>
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
         selectedMonth={selectedMonth}
-        onSelectMonth={setSelectedMonth}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
+        onSelectMonth={(m) => {
+          setSelectedMonth(m);
+          setStartDate(null);
+          setEndDate(null);
+        }}
+        startDate={startDate}
+        endDate={endDate}
+        onSelectDateRange={(s, e) => {
+          setStartDate(s);
+          setEndDate(e);
+        }}
+        loading={loading}
       />
 
-      {/* ─── 3-Column Responsive Grid Layout ─── */}
-      <div className="dashboard-cards-grid">
+      {/* ─── Cards Container with Smooth Loading Overlay ─── */}
+      <div style={{ position: 'relative' }}>
+        <DataLoaderOverlay loading={loading} title="Crunching Dashboard FY Analytics..." />
+
+        {/* ─── 3-Column Responsive Grid Layout ─── */}
+        <div className="dashboard-cards-grid" style={{ opacity: loading ? 0.4 : 1, transition: 'opacity 0.25s ease' }}>
+
         
         {/* Card 1: TOTAL BUDGET vs ACTUAL */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 1.25rem 0', color: 'var(--text-main)' }}>
+          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 0.85rem 0', color: 'var(--text-main)' }}>
             TOTAL BUDGET vs ACTUAL – CURRENT MONTH
           </h3>
+
+          {/* Admin Formula Box */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Monthly Sales Budget Target (From Total Budget Plan)"
+              actualFormula="Total Net Invoiced Revenue (IFS) + Total Pending Unfulfilled Backlog Orders"
+              dataSource="IFS Invoices + Backlog"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               <div>
@@ -178,9 +381,19 @@ const DashboardFyPage = () => {
 
         {/* Card 2: DIRECT BUDGET vs ACTUAL */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 1.25rem 0', color: 'var(--text-main)' }}>
+          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 0.85rem 0', color: 'var(--text-main)' }}>
             DIRECT BUDGET vs ACTUAL – CURRENT MONTH
           </h3>
+
+          {/* Admin Formula Box */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Direct Channels Target = (Total Monthly Target - Distributor Primary Target)"
+              actualFormula="Direct Customers Net Invoiced Sales (Hospitals/Pharmacies/Direct) + Direct Pending Backlog"
+              dataSource="IFS Non-DISTRI Invoices + Backlog"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               <div>
@@ -210,9 +423,19 @@ const DashboardFyPage = () => {
 
         {/* Card 5: ANNUAL BUDGET vs ACTUAL */}
         <div className="glass-card dashboard-card-tall" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gridRow: 'span 2', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 1.25rem 0', color: 'var(--text-main)', textAlign: 'center' }}>
+          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 0.85rem 0', color: 'var(--text-main)', textAlign: 'center' }}>
             ANNUAL BUDGET vs ACTUAL
           </h3>
+
+          {/* Admin Formula Box */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Full Fiscal Year Total Sales Budget Target (Total Budget Master Total Column)"
+              actualFormula="Current Invoiced Sales + Pending Backlog Orders"
+              dataSource="Annual Budget Master + IFS Invoices"
+            />
+          )}
+
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem 0' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '1.8rem', height: '240px', width: '100%', position: 'relative' }}>
               {/* Target Bar */}
@@ -247,9 +470,19 @@ const DashboardFyPage = () => {
 
         {/* Card 3: DIS : PRI BUDGET vs ACTUAL */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 1.25rem 0', color: 'var(--text-main)' }}>
+          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 0.85rem 0', color: 'var(--text-main)' }}>
             DIS : PRI BUDGET vs ACTUAL – CURRENT MONTH
           </h3>
+
+          {/* Admin Formula Box */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Distributor Primary Sales Budget Target (From Dis Budget Plan -> Primary Target)"
+              actualFormula="Distributor Net Invoiced Revenue (Customer Group: DISTRI) + Distributor Pending Backlog"
+              dataSource="IFS DISTRI Invoices + Backlog"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               <div>
@@ -279,9 +512,19 @@ const DashboardFyPage = () => {
 
         {/* Card 4: DIS : RD BUDGET vs ACTUAL */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 1.25rem 0', color: 'var(--text-main)' }}>
+          <h3 style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 0.85rem 0', color: 'var(--text-main)' }}>
             DIS : RD BUDGET vs ACTUAL – CURRENT MONTH
           </h3>
+
+          {/* Admin Formula Box */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Retail Distribution (Secondary) Sales Budget Target (From Dis Budget Plan -> RD Target)"
+              actualFormula="Actual Field Sales Invoiced to Retail Outlets / Pharmacies (From Axienta SFA System)"
+              dataSource="Axienta SFA Sales Records"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               <div>
@@ -309,6 +552,7 @@ const DashboardFyPage = () => {
           </div>
         </div>
 
+        </div>
       </div>
 
     </div>
@@ -316,3 +560,6 @@ const DashboardFyPage = () => {
 };
 
 export default DashboardFyPage;
+
+
+

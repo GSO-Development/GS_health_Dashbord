@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PieChart, RefreshCw } from 'lucide-react';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import api from '../services/api';
 
 const fmtMn = (val) => {
@@ -86,7 +87,8 @@ const CircularGauge = ({ percentage, variance, size = 115, activeColor = '#06b6d
 
 const DisDashboardFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState('july');
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -94,7 +96,14 @@ const DisDashboardFyPage = () => {
     setLoading(true);
     try {
       const params = { month: selectedMonth };
-      if (selectedDate) params.date = selectedDate;
+      if (startDate && endDate) {
+        if (startDate === endDate) {
+          params.date = startDate;
+        } else {
+          params.start_date = startDate;
+          params.end_date = endDate;
+        }
+      }
 
       const res = await api.get('/reports/dis-dashboard-fy-overview', { params });
       if (res.data) {
@@ -108,7 +117,7 @@ const DisDashboardFyPage = () => {
 
   useEffect(() => {
     fetchDisDashboardData();
-  }, [selectedMonth, selectedDate]);
+  }, [selectedMonth, startDate, endDate]);
 
   const pri = data?.primary_sales || { actual: 783909774.55, target: 80800000, pct: 970, variance: 703109774.55 };
   const rd = data?.rd_sales || { actual: 22494390.46, target: 80800000, pct: 28, variance: -58305609.54 };
@@ -134,13 +143,25 @@ const DisDashboardFyPage = () => {
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
         selectedMonth={selectedMonth}
-        onSelectMonth={setSelectedMonth}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
+        onSelectMonth={(m) => {
+          setSelectedMonth(m);
+          setStartDate(null);
+          setEndDate(null);
+        }}
+        startDate={startDate}
+        endDate={endDate}
+        onSelectDateRange={(s, e) => {
+          setStartDate(s);
+          setEndDate(e);
+        }}
+        loading={loading}
       />
 
       {/* 3-Column Responsive Dashboard Layout */}
-      <div className="dashboard-cards-grid">
+      <div style={{ position: 'relative' }}>
+        <DataLoaderOverlay loading={loading} title="Crunching Dis-Dashboard Analytics..." />
+
+        <div className="dashboard-cards-grid" style={{ opacity: loading ? 0.4 : 1, transition: 'opacity 0.25s ease' }}>
         
         {/* CARD 1: Primary Sales Details (Top Left) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
@@ -297,10 +318,9 @@ const DisDashboardFyPage = () => {
             <span>1st QTR</span><span>2nd QTR</span><span>3rd QTR</span><span>4th QTR</span>
           </div>
         </div>
-
       </div>
-
     </div>
+  </div>
   );
 };
 

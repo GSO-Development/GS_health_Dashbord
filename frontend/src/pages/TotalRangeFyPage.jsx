@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const TotalRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState('july');
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [reportData, setReportData] = useState([]);
   const [summaryTotals, setSummaryTotals] = useState(null);
@@ -35,7 +37,14 @@ const TotalRangeFyPage = () => {
     setLoading(true);
     try {
       const params = { month: selectedMonth, search: searchTerm };
-      if (selectedDate) params.date = selectedDate;
+      if (startDate && endDate) {
+        if (startDate === endDate) {
+          params.date = startDate;
+        } else {
+          params.start_date = startDate;
+          params.end_date = endDate;
+        }
+      }
 
       const res = await api.get('/reports/total-range-fy', { params });
       if (res.data) {
@@ -50,7 +59,7 @@ const TotalRangeFyPage = () => {
 
   useEffect(() => {
     loadRangeReport();
-  }, [selectedMonth, selectedDate, searchTerm]);
+  }, [selectedMonth, startDate, endDate, searchTerm]);
 
   const toggleRowExpand = (divisionName) => {
     setExpandedRows(prev => {
@@ -103,9 +112,18 @@ const TotalRangeFyPage = () => {
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
         selectedMonth={selectedMonth}
-        onSelectMonth={setSelectedMonth}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
+        onSelectMonth={(m) => {
+          setSelectedMonth(m);
+          setStartDate(null);
+          setEndDate(null);
+        }}
+        startDate={startDate}
+        endDate={endDate}
+        onSelectDateRange={(s, e) => {
+          setStartDate(s);
+          setEndDate(e);
+        }}
+        loading={loading}
       />
 
       {/* Search Bar & Total Ranges Count */}
@@ -127,8 +145,9 @@ const TotalRangeFyPage = () => {
       </div>
 
       {/* Main Datatable with Multi-Level Perfectly Aligned Tree Rows */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+        <DataLoaderOverlay loading={loading} title="Crunching Total-Range Wise Sales Analytics..." />
+        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', opacity: loading ? 0.35 : 1, transition: 'opacity 0.25s ease' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 11, background: 'var(--bg-card)' }}>
               {/* Grouped Super Header Row */}

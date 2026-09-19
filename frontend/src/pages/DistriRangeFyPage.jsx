@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 const DistriRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState('july');
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [treeData, setTreeData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(null);
@@ -24,7 +26,14 @@ const DistriRangeFyPage = () => {
     setLoading(true);
     try {
       const params = { month: selectedMonth };
-      if (selectedDate) params.date = selectedDate;
+      if (startDate && endDate) {
+        if (startDate === endDate) {
+          params.date = startDate;
+        } else {
+          params.start_date = startDate;
+          params.end_date = endDate;
+        }
+      }
 
       const res = await api.get('/reports/distri-range-fy', { params });
       if (res.data) {
@@ -39,7 +48,7 @@ const DistriRangeFyPage = () => {
 
   useEffect(() => {
     fetchDistriRangeData();
-  }, [selectedMonth, selectedDate]);
+  }, [selectedMonth, startDate, endDate]);
 
   const toggleDivision = (divName) => {
     setExpandedDivisions(prev => ({
@@ -104,9 +113,18 @@ const DistriRangeFyPage = () => {
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
         selectedMonth={selectedMonth}
-        onSelectMonth={setSelectedMonth}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
+        onSelectMonth={(m) => {
+          setSelectedMonth(m);
+          setStartDate(null);
+          setEndDate(null);
+        }}
+        startDate={startDate}
+        endDate={endDate}
+        onSelectDateRange={(s, e) => {
+          setStartDate(s);
+          setEndDate(e);
+        }}
+        loading={loading}
       />
 
       {/* Search Bar */}
@@ -128,8 +146,9 @@ const DistriRangeFyPage = () => {
       </div>
 
       {/* Datatable with Interactive 3-Level Collapsible Tree */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+        <DataLoaderOverlay loading={loading} title="Crunching Distri-Range Wise Analytics..." />
+        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', opacity: loading ? 0.35 : 1, transition: 'opacity 0.25s ease' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--bg-card)' }}>
               {/* Grouped Super Header Row */}

@@ -1,4 +1,5 @@
 import calendar
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query
 from app.core.database import get_db_connection
@@ -19,33 +20,99 @@ MONTH_NAMES = {
     "february": "February 2027", "march": "March 2027"
 }
 
-@router.get("/dashboard-fy-overview")
-def get_dashboard_fy_overview(
-    month: Optional[str] = Query("july"),
-    date: Optional[str] = Query(None)
-):
+def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
     selected_month = month.lower().strip() if month and month.lower().strip() in MONTH_MAPPING else "july"
     month_num = MONTH_MAPPING[selected_month]
     month_name = MONTH_NAMES[selected_month]
     year = 2027 if month_num in [1, 2, 3] else 2026
-
-    # Determine days in selected month for target pro-rata
     _, days_in_month = calendar.monthrange(year, month_num)
-    filter_date = date.strip() if date and date.strip() else None
+
+    s_date = start_date.strip() if start_date and start_date.strip() else None
+    e_date = end_date.strip() if end_date and end_date.strip() else None
+    single_d = date.strip() if date and date.strip() else None
+
+    if not s_date and single_d:
+        s_date = single_d
+        e_date = single_d
+
+    if s_date and not e_date:
+        e_date = s_date
+    elif e_date and not s_date:
+        s_date = e_date
+
+    if s_date and e_date:
+        if s_date > e_date:
+            s_date, e_date = e_date, s_date
+        try:
+            d1 = datetime.strptime(s_date, "%Y-%m-%d").date()
+            d2 = datetime.strptime(e_date, "%Y-%m-%d").date()
+            days_count = max(1, (d2 - d1).days + 1)
+        except Exception:
+            days_count = 1
+
+        if s_date == e_date:
+            label = f"Date: {s_date}"
+            is_single = True
+        else:
+            label = f"{s_date} to {e_date} ({days_count} Days)"
+            is_single = False
+        return {
+            "selected_month": selected_month,
+            "month_num": month_num,
+            "year": year,
+            "days_in_month": days_in_month,
+            "filter_start": s_date,
+            "filter_end": e_date,
+            "days_count": days_count,
+            "is_single": is_single,
+            "label": label
+        }
+
+    return {
+        "selected_month": selected_month,
+        "month_num": month_num,
+        "year": year,
+        "days_in_month": days_in_month,
+        "filter_start": None,
+        "filter_end": None,
+        "days_count": days_in_month,
+        "is_single": False,
+        "label": month_name
+    }
+
+
+@router.get("/dashboard-fy-overview")
+def get_dashboard_fy_overview(
+    month: Optional[str] = Query("july"),
+    date: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    backlog_mode: Optional[str] = Query("with")
+):
+    df_info = resolve_date_filter(month, date, start_date, end_date)
+    selected_month = df_info["selected_month"]
+    month_num = df_info["month_num"]
+    year = df_info["year"]
+    days_in_month = df_info["days_in_month"]
+    filter_start = df_info["filter_start"]
+    filter_end = df_info["filter_end"]
+    days_count = df_info["days_count"]
+    has_date_filter = filter_start is not None
+    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
         # ─── 1. TOTAL BUDGET vs ACTUAL – CURRENT MONTH ───
         cursor.execute(f"SELECT COALESCE(SUM({selected_month}), 0) as target FROM total_budget;")
         monthly_total_target = float(cursor.fetchone()['target'] or 0.0)
-        total_target_val = (monthly_total_target / days_in_month) if filter_date else monthly_total_target
+        total_target_val = (monthly_total_target / days_in_month * days_count) if has_date_filter else monthly_total_target
 
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
                 FROM invoice_output 
-                WHERE DATE(invoice_date) = %s;
-            """, (filter_date,))
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s;
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
@@ -54,26 +121,40 @@ def get_dashboard_fy_overview(
             """, (month_num, year))
         inv_net = float(cursor.fetchone()['inv_net'] or 0.0)
 
-        cursor.execute("""
-            SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
-            FROM outstanding_output 
-            WHERE UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL;
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
+                FROM outstanding_output 
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """, (filter_start, filter_end))
+        else:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
+                FROM outstanding_output 
+                WHERE UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL;
+            """)
         out_back_non_gstea = float(cursor.fetchone()['back_val'] or 0.0)
 
-        total_actual_val = inv_net + (0.0 if filter_date else out_back_non_gstea)
+        if mode == "without":
+            total_actual_val = inv_net
+        elif mode == "only":
+            total_actual_val = out_back_non_gstea
+        else:
+            total_actual_val = inv_net + out_back_non_gstea
+
         total_pct = round((total_actual_val / total_target_val) * 100) if total_target_val > 0 else 0
         total_variance = total_actual_val - total_target_val
 
         # ─── 2. DIS : PRI BUDGET vs ACTUAL – CURRENT MONTH ───
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
-                WHERE DATE(invoice_date) = %s 
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
                   AND UPPER(TRIM(cust_grp)) = 'DISTRI'
                   AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_date,))
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
@@ -84,15 +165,29 @@ def get_dashboard_fy_overview(
             """, (month_num, year))
         dis_pri_inv = float(cursor.fetchone()['dis_inv'] or 0.0)
 
-        cursor.execute("""
-            SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
-            FROM outstanding_output 
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
+                FROM outstanding_output 
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """, (filter_start, filter_end))
+        else:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
+                FROM outstanding_output 
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """)
         dis_pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
-        pri_actual = dis_pri_inv + (0.0 if filter_date else dis_pri_back)
+        if mode == "without":
+            pri_actual = dis_pri_inv
+        elif mode == "only":
+            pri_actual = dis_pri_back
+        else:
+            pri_actual = dis_pri_inv + dis_pri_back
 
         cursor.execute("""
             SELECT COALESCE(SUM(primary_target), 0) as pri_target 
@@ -100,20 +195,20 @@ def get_dashboard_fy_overview(
             WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
         """, (month_num, f"%-{month_num:02d}-%", selected_month))
         monthly_pri_target = float(cursor.fetchone()['pri_target'] or 0.0)
-        pri_target = (monthly_pri_target / days_in_month) if filter_date else monthly_pri_target
+        pri_target = (monthly_pri_target / days_in_month * days_count) if has_date_filter else monthly_pri_target
 
         pri_pct = round((pri_actual / pri_target) * 100) if pri_target > 0 else 0
         pri_variance = pri_actual - pri_target
 
         # ─── 3. DIRECT BUDGET vs ACTUAL – CURRENT MONTH ───
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
                 FROM invoice_output 
-                WHERE DATE(invoice_date) = %s 
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
                   AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
                   AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_date,))
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
@@ -124,15 +219,29 @@ def get_dashboard_fy_overview(
             """, (month_num, year))
         dir_inv_net = float(cursor.fetchone()['dir_inv'] or 0.0)
 
-        cursor.execute("""
-            SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
-            FROM outstanding_output 
-            WHERE (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
+                FROM outstanding_output 
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
+                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """, (filter_start, filter_end))
+        else:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
+                FROM outstanding_output 
+                WHERE (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """)
         dir_out_back = float(cursor.fetchone()['dir_back'] or 0.0)
 
-        direct_actual = dir_inv_net + (0.0 if filter_date else dir_out_back)
+        if mode == "without":
+            direct_actual = dir_inv_net
+        elif mode == "only":
+            direct_actual = dir_out_back
+        else:
+            direct_actual = dir_inv_net + dir_out_back
 
         direct_target = total_target_val - pri_target
         if direct_target < 0:
@@ -142,12 +251,12 @@ def get_dashboard_fy_overview(
         direct_variance = direct_actual - direct_target
 
         # ─── 4. DIS : RD BUDGET vs ACTUAL ───
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(value), 0) as rd_act 
                 FROM axienta_data 
-                WHERE DATE(entry_date) = %s;
-            """, (filter_date,))
+                WHERE DATE(entry_date) >= %s AND DATE(entry_date) <= %s;
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(value), 0) as rd_act 
@@ -162,7 +271,7 @@ def get_dashboard_fy_overview(
             WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
         """, (month_num, f"%-{month_num:02d}-%", selected_month))
         monthly_rd_target = float(cursor.fetchone()['rd_target'] or 0.0)
-        rd_target = (monthly_rd_target / days_in_month) if filter_date else monthly_rd_target
+        rd_target = (monthly_rd_target / days_in_month * days_count) if has_date_filter else monthly_rd_target
 
         rd_pct = round((rd_actual / rd_target) * 100) if rd_target > 0 else 0
         rd_variance = rd_actual - rd_target
@@ -175,27 +284,35 @@ def get_dashboard_fy_overview(
 
     conn.close()
 
-    label_text = f"Date: {filter_date}" if filter_date else month_name
-
     return {
         "selected_month": selected_month,
-        "selected_date": filter_date,
-        "month_label": label_text,
+        "selected_date": filter_start if df_info["is_single"] else None,
+        "start_date": filter_start,
+        "end_date": filter_end,
+        "days_count": days_count,
+        "month_label": df_info["label"],
+        "backlog_mode": mode,
         "total_budget": {
             "target": round(total_target_val, 2),
             "actual": round(total_actual_val, 2),
+            "invoiced": round(inv_net, 2),
+            "backlog": round(out_back_non_gstea, 2),
             "pct": total_pct,
             "variance": round(total_variance, 2),
         },
         "direct_budget": {
             "target": round(direct_target, 2),
             "actual": round(direct_actual, 2),
+            "invoiced": round(dir_inv_net, 2),
+            "backlog": round(dir_out_back, 2),
             "pct": direct_pct,
             "variance": round(direct_variance, 2),
         },
         "dis_pri": {
             "target": round(pri_target, 2),
             "actual": round(pri_actual, 2),
+            "invoiced": round(dis_pri_inv, 2),
+            "backlog": round(dis_pri_back, 2),
             "pct": pri_pct,
             "variance": round(pri_variance, 2),
         },
@@ -217,27 +334,31 @@ def get_dashboard_fy_overview(
 @router.get("/dis-dashboard-fy-overview")
 def get_dis_dashboard_fy_overview(
     month: Optional[str] = Query("july"),
-    date: Optional[str] = Query(None)
+    date: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None)
 ):
-    selected_month = month.lower().strip() if month and month.lower().strip() in MONTH_MAPPING else "july"
-    month_num = MONTH_MAPPING[selected_month]
-    month_name = MONTH_NAMES[selected_month]
-    year = 2027 if month_num in [1, 2, 3] else 2026
-
-    _, days_in_month = calendar.monthrange(year, month_num)
-    filter_date = date.strip() if date and date.strip() else None
+    df_info = resolve_date_filter(month, date, start_date, end_date)
+    selected_month = df_info["selected_month"]
+    month_num = df_info["month_num"]
+    year = df_info["year"]
+    days_in_month = df_info["days_in_month"]
+    filter_start = df_info["filter_start"]
+    filter_end = df_info["filter_end"]
+    days_count = df_info["days_count"]
+    has_date_filter = filter_start is not None
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
         # 1. Primary Sales Details (cust_grp = 'DISTRI')
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
-                WHERE DATE(invoice_date) = %s 
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
                   AND UPPER(TRIM(cust_grp)) = 'DISTRI'
                   AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_date,))
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
@@ -248,15 +369,24 @@ def get_dis_dashboard_fy_overview(
             """, (month_num, year))
         pri_inv = float(cursor.fetchone()['dis_inv'] or 0.0)
 
-        cursor.execute("""
-            SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
-            FROM outstanding_output 
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
+                FROM outstanding_output 
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """, (filter_start, filter_end))
+        else:
+            cursor.execute("""
+                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
+                FROM outstanding_output 
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
+            """)
         pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
-        pri_actual = pri_inv + (0.0 if filter_date else pri_back)
+        pri_actual = pri_inv + pri_back
 
         cursor.execute("""
             SELECT COALESCE(SUM(primary_target), 0) as pri_target 
@@ -264,18 +394,18 @@ def get_dis_dashboard_fy_overview(
             WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
         """, (month_num, f"%-{month_num:02d}-%", selected_month))
         monthly_pri_target = float(cursor.fetchone()['pri_target'] or 0.0)
-        pri_target = (monthly_pri_target / days_in_month) if filter_date else monthly_pri_target
+        pri_target = (monthly_pri_target / days_in_month * days_count) if has_date_filter else monthly_pri_target
 
         pri_pct = round((pri_actual / pri_target) * 100) if pri_target > 0 else 0
         pri_variance = pri_actual - pri_target
 
         # 2. RD Sales Details (axienta_data.value)
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT COALESCE(SUM(value), 0) as rd_act 
                 FROM axienta_data 
-                WHERE DATE(entry_date) = %s;
-            """, (filter_date,))
+                WHERE DATE(entry_date) >= %s AND DATE(entry_date) <= %s;
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT COALESCE(SUM(value), 0) as rd_act 
@@ -290,7 +420,7 @@ def get_dis_dashboard_fy_overview(
             WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
         """, (month_num, f"%-{month_num:02d}-%", selected_month))
         monthly_rd_target = float(cursor.fetchone()['rd_target'] or 0.0)
-        rd_target = (monthly_rd_target / days_in_month) if filter_date else monthly_rd_target
+        rd_target = (monthly_rd_target / days_in_month * days_count) if has_date_filter else monthly_rd_target
 
         rd_pct = round((rd_actual / rd_target) * 100) if rd_target > 0 else 0
         rd_variance = rd_actual - rd_target
@@ -370,12 +500,13 @@ def get_dis_dashboard_fy_overview(
 
     conn.close()
 
-    label_text = f"Date: {filter_date}" if filter_date else month_name
-
     return {
         "selected_month": selected_month,
-        "selected_date": filter_date,
-        "month_label": label_text,
+        "selected_date": filter_start if df_info["is_single"] else None,
+        "start_date": filter_start,
+        "end_date": filter_end,
+        "days_count": days_count,
+        "month_label": df_info["label"],
         "primary_sales": {
             "actual": round(pri_actual, 2),
             "target": round(pri_target, 2),
@@ -404,15 +535,19 @@ def get_dis_dashboard_fy_overview(
 @router.get("/distri-range-fy")
 def get_distri_range_fy(
     month: Optional[str] = Query("july"),
-    date: Optional[str] = Query(None)
+    date: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None)
 ):
-    selected_month = month.lower().strip() if month and month.lower().strip() in MONTH_MAPPING else "july"
-    month_num = MONTH_MAPPING[selected_month]
-    month_name = MONTH_NAMES[selected_month]
-    year = 2027 if month_num in [1, 2, 3] else 2026
-
-    _, days_in_month = calendar.monthrange(year, month_num)
-    filter_date = date.strip() if date and date.strip() else None
+    df_info = resolve_date_filter(month, date, start_date, end_date)
+    selected_month = df_info["selected_month"]
+    month_num = df_info["month_num"]
+    year = df_info["year"]
+    days_in_month = df_info["days_in_month"]
+    filter_start = df_info["filter_start"]
+    filter_end = df_info["filter_end"]
+    days_count = df_info["days_count"]
+    has_date_filter = filter_start is not None
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -433,8 +568,8 @@ def get_distri_range_fy(
             m_rd = float(r['m_rd_tgt'] or 0.0)
             dis_budget_map[pid] = {
                 'pid': pid,
-                'm_pri_tgt': (m_pri / days_in_month) if filter_date else m_pri,
-                'm_rd_tgt': (m_rd / days_in_month) if filter_date else m_rd
+                'm_pri_tgt': (m_pri / days_in_month * days_count) if has_date_filter else m_pri,
+                'm_rd_tgt': (m_rd / days_in_month * days_count) if has_date_filter else m_rd
             }
 
         # 2. Cumulative Primary target & RD target from dis_budget
@@ -450,15 +585,15 @@ def get_distri_range_fy(
         dis_budget_c_map = {r['pid']: r for r in cursor.fetchall()}
 
         # 3. RD actual from axienta_data
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT 
                     TRIM(product_id) as pid,
                     COALESCE(SUM(value), 0) as m_rd_act
                 FROM axienta_data
-                WHERE DATE(entry_date) = %s
+                WHERE DATE(entry_date) >= %s AND DATE(entry_date) <= %s
                 GROUP BY TRIM(product_id);
-            """, (filter_date,))
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT 
@@ -482,17 +617,17 @@ def get_distri_range_fy(
         axienta_c_map = {r['pid']: r['c_rd_act'] for r in cursor.fetchall()}
 
         # 5. Primary actual from invoice_output
-        if filter_date:
+        if has_date_filter:
             cursor.execute("""
                 SELECT 
                     TRIM(catalog_no) as pid,
                     COALESCE(SUM(net_dom_amount), 0) as m_inv
                 FROM invoice_output
-                WHERE DATE(invoice_date) = %s
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
                   AND UPPER(TRIM(cust_grp)) = 'DISTRI'
                   AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
                 GROUP BY TRIM(catalog_no);
-            """, (filter_date,))
+            """, (filter_start, filter_end))
         else:
             cursor.execute("""
                 SELECT 
@@ -520,15 +655,27 @@ def get_distri_range_fy(
         inv_c_map = {r['pid']: r['c_inv'] for r in cursor.fetchall()}
 
         # 7. Backlog from outstanding_output
-        cursor.execute("""
-            SELECT 
-                TRIM(catalog_no) as pid,
-                COALESCE(SUM(backlog_value_base_curr), 0) as back
-            FROM outstanding_output
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
-            GROUP BY TRIM(catalog_no);
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT 
+                    TRIM(catalog_no) as pid,
+                    COALESCE(SUM(backlog_value_base_curr), 0) as back
+                FROM outstanding_output
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                GROUP BY TRIM(catalog_no);
+            """, (filter_start, filter_end))
+        else:
+            cursor.execute("""
+                SELECT 
+                    TRIM(catalog_no) as pid,
+                    COALESCE(SUM(backlog_value_base_curr), 0) as back
+                FROM outstanding_output
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
+                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                GROUP BY TRIM(catalog_no);
+            """)
         back_map = {r['pid']: r['back'] for r in cursor.fetchall()}
 
         # 8. All distinct items from total_budget
@@ -564,7 +711,7 @@ def get_distri_range_fy(
 
             item_pri_tgt = float(b_info.get('m_pri_tgt', 0.0))
             item_rd_tgt = float(b_info.get('m_rd_tgt', 0.0))
-            item_pri_act = float(inv_m_map.get(pno, 0.0)) + (0.0 if filter_date else float(back_map.get(pno, 0.0)))
+            item_pri_act = float(inv_m_map.get(pno, 0.0)) + float(back_map.get(pno, 0.0))
             item_rd_act = float(axienta_m_map.get(pno, 0.0))
 
             item_c_pri_tgt = float(b_c_info.get('c_pri_tgt', 0.0))
@@ -575,7 +722,6 @@ def get_distri_range_fy(
             item_obj = {
                 "part_no": pno,
                 "product_sku": psku,
-                # New standard keys
                 "p_tgt": round(item_pri_tgt, 2),
                 "p_act": round(item_pri_act, 2),
                 "p_pct": calc_pct(item_pri_act, item_pri_tgt),
@@ -588,7 +734,6 @@ def get_distri_range_fy(
                 "c_rd_tgt": round(item_c_rd_tgt, 2),
                 "c_rd_act": round(item_c_rd_act, 2),
                 "c_rd_pct": calc_pct(item_c_rd_act, item_c_rd_tgt),
-                # Legacy alias keys for backward compatibility
                 "pri_target": round(item_pri_tgt, 2),
                 "pri_actual": round(item_pri_act, 2),
                 "rd_target": round(item_rd_tgt, 2),
@@ -639,7 +784,6 @@ def get_distri_range_fy(
                     "c_rd_tgt": round(s_c_rd_tgt, 2),
                     "c_rd_act": round(s_c_rd_act, 2),
                     "c_rd_pct": calc_pct(s_c_rd_act, s_c_rd_tgt),
-                    # Legacy alias keys
                     "pri_target": round(s_pri_tgt, 2),
                     "pri_actual": round(s_pri_act, 2),
                     "rd_target": round(s_rd_tgt, 2),
@@ -675,7 +819,6 @@ def get_distri_range_fy(
                 "c_rd_tgt": round(div_c_rd_tgt, 2),
                 "c_rd_act": round(div_c_rd_act, 2),
                 "c_rd_pct": calc_pct(div_c_rd_act, div_c_rd_tgt),
-                # Legacy alias keys
                 "pri_target": round(div_pri_tgt, 2),
                 "pri_actual": round(div_pri_act, 2),
                 "rd_target": round(div_rd_tgt, 2),
@@ -699,12 +842,13 @@ def get_distri_range_fy(
 
     conn.close()
 
-    label_text = f"Date: {filter_date}" if filter_date else month_name
-
     return {
         "selected_month": selected_month,
-        "selected_date": filter_date,
-        "month_label": label_text,
+        "selected_date": filter_start if df_info["is_single"] else None,
+        "start_date": filter_start,
+        "end_date": filter_end,
+        "days_count": days_count,
+        "month_label": df_info["label"],
         "grand_total": {
             "p_tgt": round(g_pri_tgt, 2),
             "p_act": round(g_pri_act, 2),
@@ -718,7 +862,6 @@ def get_distri_range_fy(
             "c_rd_tgt": round(g_c_rd_tgt, 2),
             "c_rd_act": round(g_c_rd_act, 2),
             "c_rd_pct": calc_pct(g_c_rd_act, g_c_rd_tgt),
-            # Legacy alias keys
             "pri_target": round(g_pri_tgt, 2),
             "pri_actual": round(g_pri_act, 2),
             "rd_target": round(g_rd_tgt, 2),
