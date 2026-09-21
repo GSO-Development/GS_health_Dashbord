@@ -230,8 +230,8 @@ def get_total_range_fy(
         range_to_sg = {}
         sg_to_range = {}
         for r in div_mappings_rows:
-            sg = r['s_grp']
-            rn = r['r_name']
+            sg = r.get('s_grp')
+            rn = r.get('r_name')
             if rn:
                 rn_clean = rn.strip()
                 if rn_clean not in range_to_sg:
@@ -241,25 +241,57 @@ def get_total_range_fy(
                     range_to_sg[rn_clean].add(sg_clean)
                     sg_to_range[sg_clean.lower()] = rn_clean
 
-        # Distinct Ranges from division_mappings + total_budget (A to Z)
+        # 2. Fetch distinct range_name and sales_group from total_budget
         cursor.execute("""
-            SELECT DISTINCT TRIM(range_name) as range_name 
-            FROM division_mappings 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' 
-            ORDER BY range_name ASC;
-        """)
-        div_ranges = [r['range_name'] for r in cursor.fetchall()]
-
-        cursor.execute("""
-            SELECT DISTINCT TRIM(range_name) as range_name 
+            SELECT DISTINCT TRIM(range_name) as r_name, TRIM(sales_group) as s_grp 
             FROM total_budget 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '';
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' 
+              AND sales_group IS NOT NULL AND TRIM(sales_group) != '';
         """)
-        tb_ranges = [r['range_name'] for r in cursor.fetchall()]
+        for r in cursor.fetchall():
+            rn_clean = r['r_name'].strip()
+            sg_clean = r['s_grp'].strip()
+            if sg_clean.lower() not in sg_to_range:
+                if rn_clean not in range_to_sg:
+                    range_to_sg[rn_clean] = set()
+                range_to_sg[rn_clean].add(sg_clean)
+                sg_to_range[sg_clean.lower()] = rn_clean
 
-        all_ranges = sorted(list(set(div_ranges + tb_ranges)))
+        # 3. Dynamic Discovery of any additional sales groups from invoice_output and outstanding_output
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_group) as s_grp 
+            FROM invoice_output 
+            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+        """)
+        for r in cursor.fetchall():
+            sg_clean = r['s_grp'].strip()
+            sg_key = sg_clean.lower()
+            if sg_key not in sg_to_range:
+                # Assign to itself as division if not mapped anywhere
+                if sg_clean not in range_to_sg:
+                    range_to_sg[sg_clean] = set()
+                range_to_sg[sg_clean].add(sg_clean)
+                sg_to_range[sg_key] = sg_clean
 
-        # 2. Bulk fetch budgets grouped by range_name AND sales_group from total_budget
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_group) as s_grp 
+            FROM outstanding_output 
+            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+        """)
+        for r in cursor.fetchall():
+            sg_clean = r['s_grp'].strip()
+            sg_key = sg_clean.lower()
+            if sg_key not in sg_to_range:
+                if sg_clean not in range_to_sg:
+                    range_to_sg[sg_clean] = set()
+                range_to_sg[sg_clean].add(sg_clean)
+                sg_to_range[sg_key] = sg_clean
+
+        all_ranges = sorted(list(range_to_sg.keys()))
+
+        # 4. Bulk fetch budgets grouped by sales_group from total_budget
         cursor.execute("""
             SELECT 
                 TRIM(b.sales_group) as s_grp,
@@ -278,7 +310,7 @@ def get_total_range_fy(
                 sg_key = s_grp.strip().lower()
                 sg_b_map[sg_key] = r
 
-        # 3. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
+        # 5. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
@@ -320,11 +352,11 @@ def get_total_range_fy(
                 sk = (s_grp.strip().lower(), inv_m)
                 sg_inv_map[sk] = sg_inv_map.get(sk, 0.0) + act_val
 
-            if part_no and inv_m:
-                pk = (part_no.strip().lower(), inv_m)
+            if s_grp and part_no and inv_m:
+                pk = (s_grp.strip().lower(), part_no.strip().lower(), inv_m)
                 p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
 
-        # 4. Bulk fetch outstanding backlog
+        # 6. Bulk fetch outstanding backlog
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
@@ -361,11 +393,11 @@ def get_total_range_fy(
             if s_grp:
                 sk = s_grp.strip().lower()
                 sg_back_map[sk] = sg_back_map.get(sk, 0.0) + back_val
-            if part_no:
-                pk = part_no.strip().lower()
+            if s_grp and part_no:
+                pk = (s_grp.strip().lower(), part_no.strip().lower())
                 p_back_map[pk] = p_back_map.get(pk, 0.0) + back_val
 
-        # 5. Bulk fetch individual product rows from total_budget with monthly budgets
+        # 7. Bulk fetch individual product rows from total_budget with monthly budgets
         cursor.execute("""
             SELECT 
                 TRIM(sales_group) as s_grp,
@@ -456,13 +488,8 @@ def get_total_range_fy(
     sel_m_num = MONTH_NUM_MAP[selected_month]
 
     for index, r_name in enumerate(all_ranges, 1):
-        r_key = r_name.strip().lower()
-
         # Build Sub-List of Mapped Sales Groups for this Range
         sg_set = range_to_sg.get(r_name, set())
-        for sg_k, sg_row in sg_b_map.items():
-            if sg_row.get('r_name') and sg_row['r_name'].strip().lower() == r_key:
-                sg_set.add(sg_row['s_grp'].strip())
 
         sales_groups_list = []
         for sg_name in sorted(list(sg_set)):
@@ -513,15 +540,15 @@ def get_total_range_fy(
                 pk = p_no.lower()
 
                 p_mb = float(p.get(selected_month) or 0)
-                p_inv_m = p_inv_map.get((pk, sel_m_num), 0.0)
+                p_inv_m = p_inv_map.get((sg_k, pk, sel_m_num), 0.0)
 
                 p_cb = sum(float(p.get(m) or 0) for m in cum_months)
-                p_inv_c = sum(p_inv_map.get((pk, mn), 0.0) for mn in cum_m_nums)
+                p_inv_c = sum(p_inv_map.get((sg_k, pk, mn), 0.0) for mn in cum_m_nums)
 
                 p_ab = float(p.get('total') or 0)
-                p_inv_a = sum(p_inv_map.get((pk, mn), 0.0) for mn in MONTH_NUM_MAP.values())
+                p_inv_a = sum(p_inv_map.get((sg_k, pk, mn), 0.0) for mn in MONTH_NUM_MAP.values())
 
-                p_back = p_back_map.get(pk, 0.0)
+                p_back = p_back_map.get((sg_k, pk), 0.0)
 
                 if b_mode == "without":
                     p_ma = p_inv_m
