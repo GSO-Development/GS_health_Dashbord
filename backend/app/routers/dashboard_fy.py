@@ -236,43 +236,10 @@ def get_dashboard_fy_overview(
         pri_variance = pri_actual - pri_target
 
         # ─── 3. DIRECT BUDGET vs ACTUAL – CURRENT MONTH ───
-        if has_date_filter:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
-                FROM invoice_output 
-                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
-            """, [filter_start, filter_end] + c_params)
-        else:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
-                FROM invoice_output 
-                WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
-            """, [month_num, year] + c_params)
-        dir_inv_net = float(cursor.fetchone()['dir_inv'] or 0.0)
-
-        if has_date_filter:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
-                FROM outstanding_output 
-                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
-            """, [filter_start, filter_end] + c_params)
-        else:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
-                FROM outstanding_output 
-                WHERE (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
-            """, c_params)
-        dir_out_back = float(cursor.fetchone()['dir_back'] or 0.0)
-
-        if mode == "without":
-            direct_actual = dir_inv_net
-        elif mode == "only":
-            direct_actual = dir_out_back
-        else:
-            direct_actual = dir_inv_net + dir_out_back
+        # Direct = Total Budget - Distributor Primary (Guarantees 100% Mathematical Reconciliation)
+        dir_inv_net = inv_net - dis_pri_inv
+        dir_out_back = out_back_non_gstea - dis_pri_back
+        direct_actual = total_actual_val - pri_actual
 
         direct_target = total_target_val - pri_target
         if direct_target < 0:
