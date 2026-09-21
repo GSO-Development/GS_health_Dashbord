@@ -262,7 +262,7 @@ def get_total_range_fy(
             SELECT DISTINCT TRIM(catalog_group) as s_grp 
             FROM invoice_output 
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             sg_clean = r['s_grp'].strip()
@@ -278,7 +278,7 @@ def get_total_range_fy(
             SELECT DISTINCT TRIM(catalog_group) as s_grp 
             FROM outstanding_output 
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             sg_clean = r['s_grp'].strip()
@@ -320,7 +320,7 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
-                  AND UPPER(TRIM(i.catalog_no)) NOT LIKE 'HET0%'
+                  AND LEFT(UPPER(TRIM(i.catalog_no)), 4) != 'HET0'
                 GROUP BY s_grp, part_no, inv_m;
             """, [s_date, e_date] + c_params)
         else:
@@ -332,7 +332,7 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 WHERE 1=1 {c_clause_i}
-                  AND UPPER(TRIM(i.catalog_no)) NOT LIKE 'HET0%'
+                  AND LEFT(UPPER(TRIM(i.catalog_no)), 4) != 'HET0'
                 GROUP BY s_grp, part_no, inv_m;
             """
             if c_params:
@@ -365,7 +365,7 @@ def get_total_range_fy(
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
-                  AND UPPER(TRIM(o.catalog_no)) NOT LIKE 'HET0%'
+                  AND LEFT(UPPER(TRIM(o.catalog_no)), 4) != 'HET0'
                 GROUP BY s_grp, part_no;
             """, [s_date, e_date] + c_params)
         else:
@@ -376,7 +376,7 @@ def get_total_range_fy(
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE 1=1 {c_clause_o}
-                  AND UPPER(TRIM(o.catalog_no)) NOT LIKE 'HET0%'
+                  AND LEFT(UPPER(TRIM(o.catalog_no)), 4) != 'HET0'
                 GROUP BY s_grp, part_no;
             """
             if c_params:
@@ -429,7 +429,7 @@ def get_total_range_fy(
             FROM invoice_output
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
               AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
@@ -455,7 +455,7 @@ def get_total_range_fy(
             FROM outstanding_output
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
               AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
+              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
