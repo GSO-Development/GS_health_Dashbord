@@ -278,40 +278,41 @@ def get_total_range_fy(
                 sg_key = s_grp.strip().lower()
                 sg_b_map[sg_key] = r
 
-        # 3. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table joining division_mappings
+        # 3. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
                     TRIM(i.catalog_group) as s_grp,
                     TRIM(i.catalog_no) as part_no,
-                    COALESCE(TRIM(m.range_name), TRIM(i.catalog_group)) as r_name,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
-                LEFT JOIN division_mappings m ON LOWER(TRIM(i.catalog_group)) = LOWER(TRIM(m.sales_group))
                 WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
-                GROUP BY s_grp, part_no, r_name, inv_m;
+                  AND UPPER(TRIM(i.catalog_no)) NOT LIKE 'HET0%'
+                GROUP BY s_grp, part_no, inv_m;
             """, [s_date, e_date] + c_params)
         else:
-            cursor.execute(f"""
+            inv_query = f"""
                 SELECT 
                     TRIM(i.catalog_group) as s_grp,
                     TRIM(i.catalog_no) as part_no,
-                    COALESCE(TRIM(m.range_name), TRIM(i.catalog_group)) as r_name,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
-                LEFT JOIN division_mappings m ON LOWER(TRIM(i.catalog_group)) = LOWER(TRIM(m.sales_group))
                 WHERE 1=1 {c_clause_i}
-                GROUP BY s_grp, part_no, r_name, inv_m;
-            """, c_params)
+                  AND UPPER(TRIM(i.catalog_no)) NOT LIKE 'HET0%'
+                GROUP BY s_grp, part_no, inv_m;
+            """
+            if c_params:
+                cursor.execute(inv_query, c_params)
+            else:
+                cursor.execute(inv_query)
+
         sg_inv_map = {}
-        r_inv_map = {}
         p_inv_map = {}
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
             part_no = r.get('part_no')
-            r_name = r.get('r_name')
             inv_m = int(r.get('inv_m') or 0)
             act_val = float(r.get('total_act') or 0)
 
@@ -323,42 +324,38 @@ def get_total_range_fy(
                 pk = (part_no.strip().lower(), inv_m)
                 p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
 
-            if r_name and inv_m:
-                rk = r_name.strip().lower()
-                r_inv_map[(rk, inv_m)] = r_inv_map.get((rk, inv_m), 0.0) + act_val
-
         # 4. Bulk fetch outstanding backlog
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
                     TRIM(o.catalog_group) as s_grp,
                     TRIM(o.catalog_no) as part_no,
-                    COALESCE(TRIM(m.range_name), TRIM(o.catalog_group)) as r_name,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
-                LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
                 WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
-                GROUP BY s_grp, part_no, r_name;
+                  AND UPPER(TRIM(o.catalog_no)) NOT LIKE 'HET0%'
+                GROUP BY s_grp, part_no;
             """, [s_date, e_date] + c_params)
         else:
-            cursor.execute(f"""
+            out_query = f"""
                 SELECT 
                     TRIM(o.catalog_group) as s_grp,
                     TRIM(o.catalog_no) as part_no,
-                    COALESCE(TRIM(m.range_name), TRIM(o.catalog_group)) as r_name,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
-                LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
                 WHERE 1=1 {c_clause_o}
-                GROUP BY s_grp, part_no, r_name;
-            """, c_params)
+                  AND UPPER(TRIM(o.catalog_no)) NOT LIKE 'HET0%'
+                GROUP BY s_grp, part_no;
+            """
+            if c_params:
+                cursor.execute(out_query, c_params)
+            else:
+                cursor.execute(out_query)
         sg_back_map = {}
-        r_back_map = {}
         p_back_map = {}
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
             part_no = r.get('part_no')
-            r_name = r.get('r_name')
             back_val = float(r.get('total_back') or 0)
 
             if s_grp:
@@ -367,9 +364,6 @@ def get_total_range_fy(
             if part_no:
                 pk = part_no.strip().lower()
                 p_back_map[pk] = p_back_map.get(pk, 0.0) + back_val
-            if r_name:
-                rk = r_name.strip().lower()
-                r_back_map[rk] = r_back_map.get(rk, 0.0) + back_val
 
         # 5. Bulk fetch individual product rows from total_budget with monthly budgets
         cursor.execute("""
@@ -583,40 +577,12 @@ def get_total_range_fy(
             })
 
         # Calculate Parent Range Totals by Summing all mapped Sales Groups (Guarantees 100% Mathematical Consistency)
-        m_b = sum(sg['m_budget'] for sg in sales_groups_list)
-        c_b = sum(sg['c_budget'] for sg in sales_groups_list)
-        a_b = sum(sg['a_budget'] for sg in sales_groups_list)
-
-        r_inv_m = r_inv_map.get((r_key, sel_m_num), 0.0)
-        r_inv_c = sum(r_inv_map.get((r_key, mn), 0.0) for mn in cum_m_nums)
-        r_inv_a = sum(r_inv_map.get((r_key, mn), 0.0) for mn in MONTH_NUM_MAP.values())
-        r_back = r_back_map.get(r_key, 0.0)
-
-        if b_mode == "without":
-            m_a = r_inv_m
-            c_a = r_inv_c
-            a_a = r_inv_a
-        elif b_mode == "only":
-            m_a = r_back
-            c_a = r_back
-            a_a = r_back
-        else:  # "with"
-            m_a = r_inv_m + r_back
-            c_a = r_inv_c + r_back
-            a_a = r_inv_a + r_back
-
-        # Fallback to sum of sales group actuals if higher
-        sg_m_a_sum = sum(sg['m_actual'] for sg in sales_groups_list)
-        sg_c_a_sum = sum(sg['c_actual'] for sg in sales_groups_list)
-        sg_a_a_sum = sum(sg['a_actual'] for sg in sales_groups_list)
-
-        m_a_val = round(max(m_a, sg_m_a_sum), 2)
-        c_a_val = round(max(c_a, sg_c_a_sum), 2)
-        a_a_val = round(max(a_a, sg_a_a_sum), 2)
-
-        m_b_val = round(m_b, 2)
-        c_b_val = round(c_b, 2)
-        a_b_val = round(a_b, 2)
+        m_b_val = round(sum(sg['m_budget'] for sg in sales_groups_list), 2)
+        m_a_val = round(sum(sg['m_actual'] for sg in sales_groups_list), 2)
+        c_b_val = round(sum(sg['c_budget'] for sg in sales_groups_list), 2)
+        c_a_val = round(sum(sg['c_actual'] for sg in sales_groups_list), 2)
+        a_b_val = round(sum(sg['a_budget'] for sg in sales_groups_list), 2)
+        a_a_val = round(sum(sg['a_actual'] for sg in sales_groups_list), 2)
 
         cur_pct = round((m_a_val / m_b_val) * 100) if m_b_val > 0 else 0
         cum_pct = round((c_a_val / c_b_val) * 100) if c_b_val > 0 else 0
