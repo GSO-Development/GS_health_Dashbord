@@ -13,7 +13,8 @@ def get_invoice_output(
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    contract: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -43,6 +44,10 @@ def get_invoice_output(
     if end_date:
         where_clauses.append("DATE(invoice_date) <= %s")
         params.append(end_date)
+
+    if contract and isinstance(contract, str) and contract.strip():
+        where_clauses.append("UPPER(TRIM(contract)) = %s")
+        params.append(contract.strip().upper())
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -83,7 +88,8 @@ def get_outstanding_output(
     year: Optional[int] = None,
     month: Optional[int] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    contract: Optional[str] = None
 ):
     page_num = int(page) if isinstance(page, (int, str)) and str(page).isdigit() else 1
     limit_num = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 10
@@ -113,6 +119,10 @@ def get_outstanding_output(
     if end_date:
         where_clauses.append("DATE(planned_delivery_date) <= %s")
         params.append(end_date)
+
+    if contract and isinstance(contract, str) and contract.strip():
+        where_clauses.append("UPPER(TRIM(contract)) = %s")
+        params.append(contract.strip().upper())
 
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 

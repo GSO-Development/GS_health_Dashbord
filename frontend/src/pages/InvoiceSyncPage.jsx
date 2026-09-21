@@ -39,9 +39,11 @@ const InvoiceSyncPage = () => {
   const [toast, setToast] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
 
-  // Date Filter State (Similar to Axienta)
+  // Date & Contract Filter State (Similar to Axienta)
   const [selectedYear, setSelectedYear] = useState('2026');
   const [selectedMonthNum, setSelectedMonthNum] = useState(0); // 0 = All Months
+  const [selectedContract, setSelectedContract] = useState('');
+  const [contractOptions, setContractOptions] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -49,6 +51,20 @@ const InvoiceSyncPage = () => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  useEffect(() => {
+    const fetchContracts = async () => {
+      try {
+        const res = await api.get('/reports/contracts');
+        if (res.data && Array.isArray(res.data.contracts)) {
+          setContractOptions(res.data.contracts);
+        }
+      } catch {
+        setContractOptions(['DIVSA', 'GSH1N', 'GSHD', 'GSIEX', 'GSTEA', 'GYM01', 'GYM02', 'KLN', 'LTS', 'MTL', 'VANSA']);
+      }
+    };
+    fetchContracts();
+  }, []);
 
   const loadInvoiceData = async () => {
     setLoading(true);
@@ -61,6 +77,7 @@ const InvoiceSyncPage = () => {
 
       if (selectedYear) params.year = selectedYear;
       if (selectedMonthNum > 0) params.month = selectedMonthNum;
+      if (selectedContract) params.contract = selectedContract;
       if (startDate) params.start_date = startDate;
       if (endDate) params.end_date = endDate;
 
@@ -86,7 +103,7 @@ const InvoiceSyncPage = () => {
 
   useEffect(() => {
     loadInvoiceData();
-  }, [selectedYear, selectedMonthNum, startDate, endDate]);
+  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate]);
 
   const handleTriggerInvoiceSync = async () => {
     setSyncing(true);
@@ -95,11 +112,14 @@ const InvoiceSyncPage = () => {
         ? `${MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name} ${selectedYear}`
         : (selectedYear ? `Year ${selectedYear}` : 'All Periods');
 
-      showToast(`Connecting to Oracle IFS (172.16.7.45) & syncing for ${periodLabel}...`, 'info');
+      const contractLabel = selectedContract ? ` (${selectedContract})` : '';
+
+      showToast(`Connecting to Oracle IFS (172.16.7.45) & syncing for ${periodLabel}${contractLabel}...`, 'info');
 
       const payload = {};
       if (selectedYear) payload.year = parseInt(selectedYear);
       if (selectedMonthNum > 0) payload.month = selectedMonthNum;
+      if (selectedContract) payload.contract = selectedContract;
       if (startDate) payload.start_date = startDate;
       if (endDate) payload.end_date = endDate;
 
@@ -116,8 +136,9 @@ const InvoiceSyncPage = () => {
   };
 
   const clearFilters = () => {
-    setSelectedYear('');
+    setSelectedYear('2026');
     setSelectedMonthNum(0);
+    setSelectedContract('');
     setStartDate('');
     setEndDate('');
     setSearchTerm('');
@@ -237,6 +258,18 @@ const InvoiceSyncPage = () => {
             ))}
           </select>
 
+          {/* Contract Dropdown */}
+          <select
+            value={selectedContract}
+            onChange={(e) => setSelectedContract(e.target.value)}
+            style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
+          >
+            <option value="">All Contracts</option>
+            {contractOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
           {/* From Date */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             <span>From:</span>
@@ -259,7 +292,7 @@ const InvoiceSyncPage = () => {
             />
           </div>
 
-          {(selectedYear || selectedMonthNum > 0 || startDate || endDate) && (
+          {(selectedYear || selectedMonthNum > 0 || selectedContract || startDate || endDate) && (
             <button
               onClick={clearFilters}
               style={{ padding: '0.4rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
@@ -302,6 +335,7 @@ const InvoiceSyncPage = () => {
             <thead>
               <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Invoice No</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Contract</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Invoice Date</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Customer Name</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Catalog / SKU</th>
@@ -315,14 +349,14 @@ const InvoiceSyncPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <RefreshCw className="animate-spin" style={{ width: '24px', height: '24px', margin: '0 auto 0.5rem auto', color: 'var(--gsh-red)' }} />
                     <div>Loading filtered invoice records...</div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
                     <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.4rem' }}>
                       No invoice records found for {selectedMonthNum > 0 ? MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name : ''} {selectedYear || ''}
                     </div>
@@ -331,7 +365,7 @@ const InvoiceSyncPage = () => {
                       Switch to <strong>July</strong> or <strong>All Months</strong> to view them.
                     </div>
                     <button
-                      onClick={() => { setSelectedYear('2026'); setSelectedMonthNum(7); setStartDate(''); setEndDate(''); }}
+                      onClick={() => { setSelectedYear('2026'); setSelectedMonthNum(7); setSelectedContract(''); setStartDate(''); setEndDate(''); }}
                       style={{ padding: '0.5rem 1.2rem', background: 'var(--accent-gradient)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', fontSize: '0.825rem', fontWeight: 700, cursor: 'pointer' }}
                     >
                       View July 2026 Invoices (19,046 Records)
@@ -343,6 +377,11 @@ const InvoiceSyncPage = () => {
                   <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--text-main)' }}>
                       {row.invoice_no || '-'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(200,16,46,0.1)', color: 'var(--gsh-red)', borderRadius: '4px', fontWeight: 700, fontSize: '0.75rem' }}>
+                        {row.contract || '-'}
+                      </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       {row.invoice_date ? String(row.invoice_date).substring(0, 10) : '-'}

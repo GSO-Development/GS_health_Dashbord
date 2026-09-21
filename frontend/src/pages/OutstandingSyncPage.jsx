@@ -38,9 +38,11 @@ const OutstandingSyncPage = () => {
   const [pageSize, setPageSize] = useState(25);
   const [toast, setToast] = useState(null);
 
-  // Period Filters
+  // Period & Contract Filters
   const [selectedYear, setSelectedYear] = useState('2026');
   const [selectedMonthNum, setSelectedMonthNum] = useState(0);
+  const [selectedContract, setSelectedContract] = useState('');
+  const [contractOptions, setContractOptions] = useState([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -48,6 +50,20 @@ const OutstandingSyncPage = () => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  useEffect(() => {
+    const fetchContracts = async () => {
+      try {
+        const res = await api.get('/reports/contracts');
+        if (res.data && Array.isArray(res.data.contracts)) {
+          setContractOptions(res.data.contracts);
+        }
+      } catch {
+        setContractOptions(['DIVSA', 'GSH1N', 'GSHD', 'GSIEX', 'GSTEA', 'GYM01', 'GYM02', 'KLN', 'LTS', 'MTL', 'VANSA']);
+      }
+    };
+    fetchContracts();
+  }, []);
 
   const loadOutstandingData = async () => {
     setLoading(true);
@@ -60,6 +76,7 @@ const OutstandingSyncPage = () => {
 
       if (selectedYear) params.year = selectedYear;
       if (selectedMonthNum > 0) params.month = selectedMonthNum;
+      if (selectedContract) params.contract = selectedContract;
       if (startDate) params.start_date = startDate;
       if (endDate) params.end_date = endDate;
 
@@ -79,7 +96,7 @@ const OutstandingSyncPage = () => {
 
   useEffect(() => {
     loadOutstandingData();
-  }, [selectedYear, selectedMonthNum, startDate, endDate]);
+  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate]);
 
   const handleTriggerOutstandingSync = async () => {
     setSyncing(true);
@@ -88,11 +105,14 @@ const OutstandingSyncPage = () => {
         ? `${MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name} ${selectedYear}`
         : (selectedYear ? `Year ${selectedYear}` : 'All Periods');
 
-      showToast(`Connecting to Oracle IFS (172.16.7.45) & syncing backlog for ${periodLabel}...`, 'info');
+      const contractLabel = selectedContract ? ` (${selectedContract})` : '';
+
+      showToast(`Connecting to Oracle IFS (172.16.7.45) & syncing backlog for ${periodLabel}${contractLabel}...`, 'info');
 
       const payload = {};
       if (selectedYear) payload.year = parseInt(selectedYear);
       if (selectedMonthNum > 0) payload.month = selectedMonthNum;
+      if (selectedContract) payload.contract = selectedContract;
       if (startDate) payload.start_date = startDate;
       if (endDate) payload.end_date = endDate;
 
@@ -111,6 +131,7 @@ const OutstandingSyncPage = () => {
   const clearFilters = () => {
     setSelectedYear('');
     setSelectedMonthNum(0);
+    setSelectedContract('');
     setStartDate('');
     setEndDate('');
     setSearchTerm('');
@@ -230,6 +251,18 @@ const OutstandingSyncPage = () => {
             ))}
           </select>
 
+          {/* Contract Dropdown */}
+          <select
+            value={selectedContract}
+            onChange={(e) => setSelectedContract(e.target.value)}
+            style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
+          >
+            <option value="">All Contracts</option>
+            {contractOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
           {/* From Date */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             <span>From:</span>
@@ -252,7 +285,7 @@ const OutstandingSyncPage = () => {
             />
           </div>
 
-          {(selectedYear || selectedMonthNum > 0 || startDate || endDate) && (
+          {(selectedYear || selectedMonthNum > 0 || selectedContract || startDate || endDate) && (
             <button
               onClick={clearFilters}
               style={{ padding: '0.4rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer' }}
@@ -295,6 +328,7 @@ const OutstandingSyncPage = () => {
             <thead>
               <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, zIndex: 10 }}>
                 <th style={{ padding: '0.75rem 1rem' }}>Order No</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Contract</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Delivery Date</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Customer Name</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Catalog / SKU</th>
@@ -308,14 +342,14 @@ const OutstandingSyncPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <RefreshCw className="animate-spin" style={{ width: '24px', height: '24px', margin: '0 auto 0.5rem auto', color: 'var(--gsh-teal)' }} />
                     <div>Loading filtered backlog records...</div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     No outstanding backlog records found matching the selected criteria.
                   </td>
                 </tr>
@@ -324,6 +358,11 @@ const OutstandingSyncPage = () => {
                   <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'var(--text-main)' }}>
                       {row.order_no || '-'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(0,180,216,0.1)', color: 'var(--gsh-teal)', borderRadius: '4px', fontWeight: 700, fontSize: '0.75rem' }}>
+                        {row.contract || '-'}
+                      </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                       {row.planned_delivery_date ? String(row.planned_delivery_date).substring(0, 10) : '-'}

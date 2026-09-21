@@ -82,13 +82,36 @@ def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Opti
     }
 
 
+# ─── CONTRACTS LIST ENDPOINT ───
+@router.get("/contracts")
+def get_contracts():
+    """Return all distinct non-null contract codes from invoices and outstanding orders."""
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("""
+            SELECT DISTINCT TRIM(contract) as contract 
+            FROM invoice_output 
+            WHERE contract IS NOT NULL AND TRIM(contract) != ''
+            UNION
+            SELECT DISTINCT TRIM(contract) as contract 
+            FROM outstanding_output 
+            WHERE contract IS NOT NULL AND TRIM(contract) != ''
+            ORDER BY contract ASC;
+        """)
+        rows = cursor.fetchall()
+        contracts = [r['contract'] for r in rows if r.get('contract')]
+    conn.close()
+    return {"contracts": contracts}
+
+
 @router.get("/dashboard-fy-overview")
 def get_dashboard_fy_overview(
     month: Optional[str] = Query("july"),
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with")
+    backlog_mode: Optional[str] = Query("with"),
+    contracts: Optional[str] = Query(None)
 ):
     df_info = resolve_date_filter(month, date, start_date, end_date)
     selected_month = df_info["selected_month"]
@@ -101,6 +124,18 @@ def get_dashboard_fy_overview(
     has_date_filter = filter_start is not None
     mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
 
+    contract_list = []
+    if isinstance(contracts, str) and contracts.strip():
+        contract_list = [c.strip().upper() for c in contracts.split(",") if c.strip()]
+
+    if contract_list:
+        placeholders = ', '.join(['%s'] * len(contract_list))
+        c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
+        c_params = list(contract_list)
+    else:
+        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_params = []
+
     conn = get_db_connection()
     with conn.cursor() as cursor:
         # ─── 1. TOTAL BUDGET vs ACTUAL – CURRENT MONTH ───
@@ -109,32 +144,31 @@ def get_dashboard_fy_overview(
         total_target_val = (monthly_total_target / days_in_month * days_count) if has_date_filter else monthly_total_target
 
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
                 FROM invoice_output 
-                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s;
-            """, (filter_start, filter_end))
+                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
                 FROM invoice_output 
-                WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s;
-            """, (month_num, year))
+                WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s {c_clause};
+            """, [month_num, year] + c_params)
         inv_net = float(cursor.fetchone()['inv_net'] or 0.0)
 
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
                 FROM outstanding_output 
-                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
                 FROM outstanding_output 
-                WHERE UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL;
-            """)
+                WHERE 1=1 {c_clause};
+            """, c_params)
         out_back_non_gstea = float(cursor.fetchone()['back_val'] or 0.0)
 
         if mode == "without":
@@ -149,38 +183,34 @@ def get_dashboard_fy_overview(
 
         # ─── 2. DIS : PRI BUDGET vs ACTUAL – CURRENT MONTH ───
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (month_num, year))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [month_num, year] + c_params)
         dis_pri_inv = float(cursor.fetchone()['dis_inv'] or 0.0)
 
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
-                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """)
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, c_params)
         dis_pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
         if mode == "without":
@@ -203,38 +233,34 @@ def get_dashboard_fy_overview(
 
         # ─── 3. DIRECT BUDGET vs ACTUAL – CURRENT MONTH ───
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
                 FROM invoice_output 
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dir_inv 
                 FROM invoice_output 
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (month_num, year))
+                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
+            """, [month_num, year] + c_params)
         dir_inv_net = float(cursor.fetchone()['dir_inv'] or 0.0)
 
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
                 FROM outstanding_output 
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dir_back 
                 FROM outstanding_output 
-                WHERE (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL)
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """)
+                WHERE (UPPER(TRIM(cust_grp)) != 'DISTRI' OR cust_grp IS NULL) {c_clause};
+            """, c_params)
         dir_out_back = float(cursor.fetchone()['dir_back'] or 0.0)
 
         if mode == "without":
@@ -338,7 +364,8 @@ def get_dis_dashboard_fy_overview(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with")
+    backlog_mode: Optional[str] = Query("with"),
+    contracts: Optional[str] = Query(None)
 ):
     df_info = resolve_date_filter(month, date, start_date, end_date)
     selected_month = df_info["selected_month"]
@@ -351,42 +378,50 @@ def get_dis_dashboard_fy_overview(
     has_date_filter = filter_start is not None
     mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
 
+    contract_list = []
+    if isinstance(contracts, str) and contracts.strip():
+        contract_list = [c.strip().upper() for c in contracts.split(",") if c.strip()]
+
+    if contract_list:
+        placeholders = ', '.join(['%s'] * len(contract_list))
+        c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
+        c_params = list(contract_list)
+    else:
+        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_params = []
+
     conn = get_db_connection()
     with conn.cursor() as cursor:
         # 1. Primary Sales Details (cust_grp = 'DISTRI')
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (month_num, year))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [month_num, year] + c_params)
         pri_inv = float(cursor.fetchone()['dis_inv'] or 0.0)
 
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (filter_start, filter_end))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
-                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """)
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, c_params)
         pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
         if mode == "without":
@@ -439,12 +474,11 @@ def get_dis_dashboard_fy_overview(
         fy_pri_target = float(fy_dis['fy_pri_tgt'] or 0.0)
         fy_rd_target = float(fy_dis['fy_rd_tgt'] or 0.0)
 
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT COALESCE(SUM(net_dom_amount), 0) as fy_pri_inv 
             FROM invoice_output 
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-        """)
+            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+        """, c_params)
         fy_pri_inv = float(cursor.fetchone()['fy_pri_inv'] or 0.0)
 
         if mode == "without":
@@ -470,13 +504,12 @@ def get_dis_dashboard_fy_overview(
         ]
 
         for m_key, m_code, m_yr in ordered_months:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as inv 
                 FROM invoice_output 
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
-            """, (m_code, m_yr))
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
+            """, [m_code, m_yr] + c_params)
             m_pri_inv = float(cursor.fetchone()['inv'] or 0.0)
 
             if mode == "without":
