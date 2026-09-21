@@ -109,7 +109,7 @@ const DisDashboardFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
-  const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
+  const [backlogMode, setBacklogMode] = useState('without'); // default 'without' (Without Backlog / Invoiced Only)
   const [selectedContracts, setSelectedContracts] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
