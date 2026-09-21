@@ -390,13 +390,66 @@ def get_total_range_fy(
             GROUP BY s_grp, part_no, product_sku;
         """)
         sg_products_map = {}
+        seen_sg_prods = set()
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
-            if s_grp:
+            p_no = r.get('part_no')
+            if s_grp and p_no:
                 k = s_grp.strip().lower()
                 if k not in sg_products_map:
                     sg_products_map[k] = []
                 sg_products_map[k].append(r)
+                seen_sg_prods.add((k, p_no.strip().lower()))
+
+        # Also fetch distinct catalog items / subcodes from invoice_output
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(description) as product_sku
+            FROM invoice_output
+            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """)
+        for r in cursor.fetchall():
+            s_grp = r.get('s_grp')
+            p_no = r.get('part_no')
+            if s_grp and p_no:
+                k = s_grp.strip().lower()
+                pk = p_no.strip().lower()
+                if (k, pk) not in seen_sg_prods:
+                    seen_sg_prods.add((k, pk))
+                    if k not in sg_products_map:
+                        sg_products_map[k] = []
+                    sg_products_map[k].append({
+                        's_grp': s_grp,
+                        'part_no': p_no,
+                        'product_sku': r.get('product_sku') or p_no,
+                        'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                        'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                    })
+
+        # Also fetch distinct catalog items / subcodes from outstanding_output
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku
+            FROM outstanding_output
+            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """)
+        for r in cursor.fetchall():
+            s_grp = r.get('s_grp')
+            p_no = r.get('part_no')
+            if s_grp and p_no:
+                k = s_grp.strip().lower()
+                pk = p_no.strip().lower()
+                if (k, pk) not in seen_sg_prods:
+                    seen_sg_prods.add((k, pk))
+                    if k not in sg_products_map:
+                        sg_products_map[k] = []
+                    sg_products_map[k].append({
+                        's_grp': s_grp,
+                        'part_no': p_no,
+                        'product_sku': r.get('product_sku') or p_no,
+                        'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                        'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                    })
 
     conn.close()
 

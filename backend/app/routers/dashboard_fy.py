@@ -747,7 +747,7 @@ def get_distri_range_fy(
             """, c_params)
         back_map = {r['pid']: r['back'] for r in cursor.fetchall()}
 
-        # 8. All distinct items from total_budget
+        # 8. All distinct items from total_budget, invoice_output, and outstanding_output
         cursor.execute("""
             SELECT DISTINCT
                 TRIM(range_name) as division_name,
@@ -756,10 +756,82 @@ def get_distri_range_fy(
                 TRIM(product_sku) as product_sku
             FROM total_budget
             WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
-              AND sales_group IS NOT NULL AND TRIM(sales_group) != ''
-            ORDER BY division_name, subgroup_name, part_no;
+              AND sales_group IS NOT NULL AND TRIM(sales_group) != '';
         """)
         tb_items = cursor.fetchall()
+
+        # Division mappings for sales_group -> range_name
+        cursor.execute("SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL;")
+        sg_to_range = {r['sg'].strip().lower(): r['rn'].strip() for r in cursor.fetchall() if r.get('sg')}
+
+        # Distinct catalog items from invoice_output for DISTRI
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(description) as product_sku, TRIM(catalog_group) as sg
+            FROM invoice_output
+            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """)
+        inv_items = cursor.fetchall()
+
+        # Distinct catalog items from outstanding_output for DISTRI
+        cursor.execute("""
+            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku, TRIM(catalog_group) as sg
+            FROM outstanding_output
+            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """)
+        out_items = cursor.fetchall()
+
+        part_to_div = {}
+        for r in tb_items:
+            if r.get('part_no'):
+                part_to_div[r['part_no'].strip().lower()] = (r['division_name'] or '', r['subgroup_name'] or '', r['product_sku'] or '')
+
+        all_merged_items = {}
+        # 1. Total budget items
+        for r in tb_items:
+            if r.get('part_no'):
+                pno = r['part_no'].strip()
+                div_name = r['division_name'] or 'Other'
+                sub_name = r['subgroup_name'] or 'Other'
+                psku = r['product_sku'] or pno
+                all_merged_items[(div_name, sub_name, pno)] = psku
+
+        # 2. Invoice subcodes / items
+        for r in inv_items:
+            pno = (r.get('part_no') or '').strip()
+            if not pno:
+                continue
+            sg = (r.get('sg') or '').strip()
+            if pno.lower() in part_to_div:
+                div_name, sub_name, _ = part_to_div[pno.lower()]
+            elif sg.lower() in sg_to_range:
+                div_name = sg_to_range[sg.lower()]
+                sub_name = sg
+            else:
+                div_name = sg or 'Other'
+                sub_name = sg or 'Other'
+            sku = (r.get('product_sku') or '').strip() or pno
+            key = (div_name, sub_name, pno)
+            if key not in all_merged_items:
+                all_merged_items[key] = sku
+
+        # 3. Backlog subcodes / items
+        for r in out_items:
+            pno = (r.get('part_no') or '').strip()
+            if not pno:
+                continue
+            sg = (r.get('sg') or '').strip()
+            if pno.lower() in part_to_div:
+                div_name, sub_name, _ = part_to_div[pno.lower()]
+            elif sg.lower() in sg_to_range:
+                div_name = sg_to_range[sg.lower()]
+                sub_name = sg
+            else:
+                div_name = sg or 'Other'
+                sub_name = sg or 'Other'
+            sku = (r.get('product_sku') or '').strip() or pno
+            key = (div_name, sub_name, pno)
+            if key not in all_merged_items:
+                all_merged_items[key] = sku
 
         # Helper to compute safe percentage
         def calc_pct(act, tgt):
@@ -769,12 +841,7 @@ def get_distri_range_fy(
 
         # Build hierarchy tree
         divisions = {}
-        for row in tb_items:
-            div_name = row['division_name']
-            sub_name = row['subgroup_name']
-            pno = row['part_no']
-            psku = row['product_sku']
-
+        for (div_name, sub_name, pno), psku in sorted(all_merged_items.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
             b_info = dis_budget_map.get(pno, {})
             b_c_info = dis_budget_c_map.get(pno, {})
 
