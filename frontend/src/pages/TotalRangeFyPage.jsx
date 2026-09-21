@@ -54,8 +54,23 @@ const TotalRangeFyPage = () => {
 
       const res = await api.get('/reports/total-range-fy', { params });
       if (res.data) {
-        setReportData(res.data.rows || []);
+        const rows = res.data.rows || [];
+        setReportData(rows);
         setSummaryTotals(res.data.summary_totals || null);
+
+        // If search term is present, auto-expand all matching divisions and sales groups
+        if (searchTerm && searchTerm.trim()) {
+          const newExpRows = new Set();
+          const newExpSg = new Set();
+          rows.forEach(r => {
+            newExpRows.add(r.division);
+            (r.sales_groups || []).forEach(sg => {
+              newExpSg.add(`${r.division}__${sg.sales_group}`);
+            });
+          });
+          setExpandedRows(newExpRows);
+          setExpandedSg(newExpSg);
+        }
       }
     } catch {
       showToast('Failed to load Total Range FY report data.', 'error');
@@ -89,6 +104,24 @@ const TotalRangeFyPage = () => {
       }
       return next;
     });
+  };
+
+  const expandAll = () => {
+    const newExpRows = new Set();
+    const newExpSg = new Set();
+    reportData.forEach(r => {
+      newExpRows.add(r.division);
+      (r.sales_groups || []).forEach(sg => {
+        newExpSg.add(`${r.division}__${sg.sales_group}`);
+      });
+    });
+    setExpandedRows(newExpRows);
+    setExpandedSg(newExpSg);
+  };
+
+  const collapseAll = () => {
+    setExpandedRows(new Set());
+    setExpandedSg(new Set());
   };
 
   return (
@@ -237,17 +270,65 @@ const TotalRangeFyPage = () => {
         loading={loading}
       />
 
-      {/* Search Bar & Total Ranges Count */}
+      {/* Search Bar, Expand/Collapse Controls & Total Ranges Count */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ position: 'relative', width: '320px' }}>
-          <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
-          <input
-            type="text"
-            placeholder="Search Division Range Name..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', width: '340px' }}>
+            <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
+            <input
+              type="text"
+              placeholder="Search Division, Sales Group, Part No, SKU..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button
+              onClick={expandAll}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-main)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Expand All Divisions, Sales Groups and Product SKUs"
+            >
+              <ChevronDown style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
+              Expand All
+            </button>
+
+            <button
+              onClick={collapseAll}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-muted)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Collapse All Rows"
+            >
+              <ChevronRight style={{ width: '14px', height: '14px' }} />
+              Collapse All
+            </button>
+          </div>
         </div>
 
         <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>

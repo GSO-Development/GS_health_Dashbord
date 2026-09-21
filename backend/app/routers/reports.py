@@ -259,10 +259,6 @@ def get_total_range_fy(
 
         all_ranges = sorted(list(set(div_ranges + tb_ranges)))
 
-        if isinstance(search, str) and search.strip():
-            s_term = search.lower().strip()
-            all_ranges = [r for r in all_ranges if s_term in r.lower()]
-
         # 2. Bulk fetch budgets grouped by range_name AND sales_group from total_budget
         cursor.execute("""
             SELECT 
@@ -645,6 +641,32 @@ def get_total_range_fy(
         tot_c_actual += c_a_val
         tot_a_budget += a_b_val
         tot_a_actual += a_a_val
+
+    # Comprehensive Multi-Level Search Filter (Division, Sales Group, Part No, Product SKU)
+    if isinstance(search, str) and search.strip():
+        s_term = search.lower().strip()
+        filtered_data = []
+        for row in data:
+            match_div = s_term in row['division'].lower()
+            matched_sgs = []
+            for sg in row['sales_groups']:
+                match_sg = s_term in sg['sales_group'].lower()
+                matched_prods = [p for p in sg['products'] if s_term in p['part_no'].lower() or s_term in p['product_sku'].lower()]
+                if match_div or match_sg or len(matched_prods) > 0:
+                    sg_copy = dict(sg)
+                    if not match_div and not match_sg and len(matched_prods) > 0:
+                        sg_copy['products'] = matched_prods
+                        sg_copy['products_count'] = len(matched_prods)
+                    matched_sgs.append(sg_copy)
+            
+            if match_div or len(matched_sgs) > 0:
+                row_copy = dict(row)
+                row_copy['sales_groups'] = matched_sgs
+                filtered_data.append(row_copy)
+        
+        for idx, r in enumerate(filtered_data, 1):
+            r['no'] = idx
+        data = filtered_data
 
     total_cur_pct = round((tot_m_actual / tot_m_budget) * 100) if tot_m_budget > 0 else 0
     total_cum_pct = round((tot_c_actual / tot_c_budget) * 100) if tot_c_budget > 0 else 0
