@@ -27,11 +27,12 @@ const MONTHS_LIST = [
 
 const YEARS_LIST = [2026, 2027, 2025, 2024];
 
-const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const getCurrentMonthNum = () => new Date().getMonth() + 1; // 1 to 12
+const getCurrentYear = () => new Date().getFullYear();
 
 const UploadAxientaDataPage = () => {
-  const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedMonthNum, setSelectedMonthNum] = useState(7); // July 2026
+  const [selectedYear, setSelectedYear] = useState(getCurrentYear);
+  const [selectedMonthNum, setSelectedMonthNum] = useState(getCurrentMonthNum);
   const [calendarSummary, setCalendarSummary] = useState({});
   const [loading, setLoading] = useState(true);
 
