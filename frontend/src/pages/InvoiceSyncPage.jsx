@@ -70,11 +70,11 @@ const InvoiceSyncPage = () => {
     setLoading(true);
     try {
       const params = {
-        search: searchTerm,
-        limit: 500,
-        page: 1,
+        limit: pageSize,
+        page: currentPage,
       };
 
+      if (searchTerm.trim()) params.search = searchTerm.trim();
       if (selectedYear) params.year = selectedYear;
       if (selectedMonthNum > 0) params.month = selectedMonthNum;
       if (selectedContract) params.contract = selectedContract;
@@ -89,7 +89,7 @@ const InvoiceSyncPage = () => {
       if (resData.data) {
         const rows = resData.data.rows || resData.data.data || [];
         setData(rows);
-        setTotalCount(resData.data.total_count || resData.data.total || rows.length);
+        setTotalCount(resData.data.total_count || resData.data.total || 0);
         setTotalNetAmount(resData.data.total_net_amount || 0);
       }
       if (resStatus.data) {
@@ -102,8 +102,11 @@ const InvoiceSyncPage = () => {
   };
 
   useEffect(() => {
-    loadInvoiceData();
-  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate]);
+    const timer = setTimeout(() => {
+      loadInvoiceData();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate, searchTerm, currentPage, pageSize]);
 
   const handleTriggerInvoiceSync = async () => {
     setSyncing(true);
@@ -136,28 +139,17 @@ const InvoiceSyncPage = () => {
   };
 
   const clearFilters = () => {
-    setSelectedYear('2026');
+    setSelectedYear('');
     setSelectedMonthNum(0);
     setSelectedContract('');
     setStartDate('');
     setEndDate('');
     setSearchTerm('');
+    setCurrentPage(1);
   };
 
-  const filtered = data.filter(r => {
-    if (!searchTerm.trim()) return true;
-    const t = searchTerm.toLowerCase();
-    return (
-      (r.delivery_customer_name && r.delivery_customer_name.toLowerCase().includes(t)) ||
-      (r.invoice_no && r.invoice_no.toLowerCase().includes(t)) ||
-      (r.catalog_no && r.catalog_no.toLowerCase().includes(t)) ||
-      (r.description && r.description.toLowerCase().includes(t)) ||
-      (r.cust_grp && r.cust_grp.toLowerCase().includes(t))
-    );
-  });
-
-  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
-  const paginatedData = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const paginatedData = data;
 
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -324,7 +316,7 @@ const InvoiceSyncPage = () => {
         </div>
 
         <div style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-          Showing <strong>{paginatedData.length}</strong> of <strong>{filtered.length}</strong> items (Page {currentPage} of {totalPages})
+          Showing <strong>{paginatedData.length}</strong> of <strong>{totalCount.toLocaleString()}</strong> items (Page {currentPage} of {totalPages})
         </div>
       </div>
 

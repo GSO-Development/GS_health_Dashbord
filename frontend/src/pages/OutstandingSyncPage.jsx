@@ -69,11 +69,11 @@ const OutstandingSyncPage = () => {
     setLoading(true);
     try {
       const params = {
-        search: searchTerm,
-        limit: 500,
-        page: 1,
+        limit: pageSize,
+        page: currentPage,
       };
 
+      if (searchTerm.trim()) params.search = searchTerm.trim();
       if (selectedYear) params.year = selectedYear;
       if (selectedMonthNum > 0) params.month = selectedMonthNum;
       if (selectedContract) params.contract = selectedContract;
@@ -85,7 +85,7 @@ const OutstandingSyncPage = () => {
       if (res.data) {
         const rows = res.data.rows || res.data.data || [];
         setData(rows);
-        setTotalCount(res.data.total_count || res.data.total || rows.length);
+        setTotalCount(res.data.total_count || res.data.total || 0);
         setTotalBacklogValue(res.data.total_backlog_value || 0);
       }
     } catch {
@@ -95,8 +95,11 @@ const OutstandingSyncPage = () => {
   };
 
   useEffect(() => {
-    loadOutstandingData();
-  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate]);
+    const timer = setTimeout(() => {
+      loadOutstandingData();
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [selectedYear, selectedMonthNum, selectedContract, startDate, endDate, searchTerm, currentPage, pageSize]);
 
   const handleTriggerOutstandingSync = async () => {
     setSyncing(true);
@@ -135,22 +138,11 @@ const OutstandingSyncPage = () => {
     setStartDate('');
     setEndDate('');
     setSearchTerm('');
+    setCurrentPage(1);
   };
 
-  const filtered = data.filter(r => {
-    if (!searchTerm.trim()) return true;
-    const t = searchTerm.toLowerCase();
-    return (
-      (r.customer_name && r.customer_name.toLowerCase().includes(t)) ||
-      (r.order_no && r.order_no.toLowerCase().includes(t)) ||
-      (r.catalog_no && r.catalog_no.toLowerCase().includes(t)) ||
-      (r.catalog_desc && r.catalog_desc.toLowerCase().includes(t)) ||
-      (r.cust_grp && r.cust_grp.toLowerCase().includes(t))
-    );
-  });
-
-  const totalPages = Math.ceil(filtered.length / pageSize) || 1;
-  const paginatedData = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  const paginatedData = data;
 
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -317,7 +309,7 @@ const OutstandingSyncPage = () => {
         </div>
 
         <div style={{ fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-          Showing <strong>{paginatedData.length}</strong> of <strong>{filtered.length}</strong> items (Page {currentPage} of {totalPages})
+          Showing <strong>{paginatedData.length}</strong> of <strong>{totalCount.toLocaleString()}</strong> items (Page {currentPage} of {totalPages})
         </div>
       </div>
 
