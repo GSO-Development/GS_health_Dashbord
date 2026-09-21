@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { PieChart, RefreshCw } from 'lucide-react';
-import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import { PieChart, RefreshCw, Calculator, ShieldCheck, Eye, EyeOff, Layers, Package, FileCheck } from 'lucide-react';
+import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const fmtMn = (val) => {
@@ -24,78 +25,97 @@ const CircularGauge = ({ percentage, variance, size = 115, activeColor = '#06b6d
   const strokeDashoffset = circumference - (Math.min(cappedPct, 100) / 100) * circumference;
 
   const isWarning = activeColor === '#f59e0b';
-  const stopColor = isWarning ? '#d97706' : (activeColor === '#06b6d4' ? '#0891b2' : (activeColor === '#3b82f6' ? '#1d4ed8' : '#059669'));
+  const isNeutral = percentage === 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      <div style={{ position: 'relative', width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.08))' }}>
-          <defs>
-            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={activeColor} />
-              <stop offset="100%" stopColor={stopColor} />
-            </linearGradient>
-          </defs>
+    <div style={{ position: 'relative', width: `${size}px`, height: `${size}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={isWarning ? '#f59e0b' : '#06b6d4'} />
+            <stop offset="100%" stopColor={isWarning ? '#d97706' : '#0891b2'} />
+          </linearGradient>
+        </defs>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={isNeutral ? '#e2e8f0' : 'rgba(6, 182, 212, 0.15)'}
+          strokeWidth={strokeWidth}
+          strokeDasharray={isNeutral ? '4 4' : 'none'}
+        />
+        {!isNeutral && (
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#e2e8f0"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-            strokeDasharray="6 4"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
+            fill="none"
             stroke={`url(#${gradientId})`}
             strokeWidth={strokeWidth}
-            fill="transparent"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            style={{ transition: 'stroke-dashoffset 0.8s ease' }}
           />
-        </svg>
-        <div style={{ position: 'absolute', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: size > 110 ? '1.4rem' : '1.2rem', fontWeight: 900, color: 'var(--text-main)', lineHeight: 1, letterSpacing: '-0.02em' }}>
-            {percentage}%
-          </span>
-        </div>
-      </div>
-      <div style={{ textAlign: 'center', marginTop: '0.45rem' }}>
-        <div style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-subtle)', marginBottom: '0.15rem' }}>
+        )}
+      </svg>
+      <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+        <span style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '-0.5px' }}>
+          {percentage}%
+        </span>
+        <span style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
           VARIANCE
-        </div>
-        <div style={{
-          fontSize: '0.8rem',
-          fontWeight: 800,
-          color: activeColor,
-          background: `rgba(6, 182, 212, 0.1)`,
-          padding: '0.15rem 0.55rem',
-          borderRadius: '10px',
-          border: `1px solid rgba(6, 182, 212, 0.3)`,
-          display: 'inline-block'
-        }}>
+        </span>
+        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: variance && variance.includes('-') ? '#c8102e' : 'var(--gsh-teal)' }}>
           {variance}
-        </div>
+        </span>
       </div>
     </div>
   );
 };
 
+const AdminFormulaBox = ({ targetFormula, actualFormula, dataSource }) => (
+  <div style={{
+    background: '#f8fafc',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    padding: '0.55rem 0.75rem',
+    marginBottom: '0.85rem',
+    fontSize: '0.725rem',
+    lineHeight: 1.45,
+    borderLeft: '3.5px solid var(--gsh-teal)'
+  }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+      <span style={{ fontWeight: 800, color: 'var(--gsh-teal)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.725rem' }}>
+        <Calculator style={{ width: '13px', height: '13px' }} />
+        Finance Formula (Admin Guide)
+      </span>
+      <span style={{ fontSize: '0.65rem', background: '#e2e8f0', color: '#475569', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 700 }}>
+        {dataSource}
+      </span>
+    </div>
+    <div style={{ color: '#334155' }}>
+      <div style={{ marginBottom: '0.15rem' }}><strong style={{ color: '#c8102e' }}>Target:</strong> {targetFormula}</div>
+      <div><strong style={{ color: '#059669' }}>Actual:</strong> {actualFormula}</div>
+    </div>
+  </div>
+);
+
 const DisDashboardFyPage = () => {
-  const [selectedMonth, setSelectedMonth] = useState('july');
+  const { isAdmin } = useAuth();
+  const [showAdminFormulas, setShowAdminFormulas] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchDisDashboardData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth };
+      const params = { month: selectedMonth, backlog_mode: backlogMode };
       if (startDate && endDate) {
         if (startDate === endDate) {
           params.date = startDate;
@@ -117,7 +137,7 @@ const DisDashboardFyPage = () => {
 
   useEffect(() => {
     fetchDisDashboardData();
-  }, [selectedMonth, startDate, endDate]);
+  }, [selectedMonth, startDate, endDate, backlogMode]);
 
   const pri = data?.primary_sales || { actual: 783909774.55, target: 80800000, pct: 970, variance: 703109774.55 };
   const rd = data?.rd_sales || { actual: 22494390.46, target: 80800000, pct: 28, variance: -58305609.54 };
@@ -127,16 +147,142 @@ const DisDashboardFyPage = () => {
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       
-      {/* Header */}
+      {/* Header with Admin Formula Guide Toggle Button */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PieChart style={{ width: '24px', height: '24px', color: 'var(--gsh-teal)' }} />
             Dis-Dashboard fy (Primary & RD Sales Analytics)
+            {loading && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                <RefreshCw style={{ width: '12px', height: '12px', animation: 'spin 1s linear infinite' }} />
+                Loading...
+              </span>
+            )}
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
             Executive Overview comparing Primary Targets vs Actuals & RD Targets vs Actuals (Live MySQL Data).
           </p>
+        </div>
+
+        {/* Admin-Only Formula Mode Toggle */}
+        {isAdmin && (
+          <button
+            onClick={() => setShowAdminFormulas(prev => !prev)}
+            style={{
+              padding: '0.45rem 0.85rem',
+              borderRadius: '6px',
+              border: showAdminFormulas ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+              background: showAdminFormulas ? 'rgba(0,168,150,0.1)' : '#ffffff',
+              color: showAdminFormulas ? 'var(--gsh-teal)' : '#64748b',
+              fontWeight: 800,
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              boxShadow: showAdminFormulas ? '0 2px 8px rgba(0,168,150,0.15)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <ShieldCheck style={{ width: '15px', height: '15px', color: showAdminFormulas ? 'var(--gsh-teal)' : '#94a3b8' }} />
+            <span>Admin Formula Guide: <strong>{showAdminFormulas ? 'ON' : 'OFF'}</strong></span>
+            {showAdminFormulas ? <Eye style={{ width: '13px', height: '13px' }} /> : <EyeOff style={{ width: '13px', height: '13px' }} />}
+          </button>
+        )}
+      </div>
+
+      {/* ─── Backlog Calculation Mode Switcher (Visible to Admin & User) ─── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '8px',
+        padding: '0.6rem 1rem',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+            📊 Backlog Calculation Mode:
+          </span>
+          <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
+            (Switch between Invoiced Net Sales and Pending Orders)
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setBacklogMode('with')}
+            disabled={loading}
+            style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '6px',
+              border: backlogMode === 'with' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+              background: backlogMode === 'with' ? 'var(--gsh-teal)' : '#f8fafc',
+              color: backlogMode === 'with' ? '#ffffff' : '#475569',
+              fontWeight: backlogMode === 'with' ? 800 : 600,
+              fontSize: '0.75rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Layers style={{ width: '13px', height: '13px' }} />
+            With Backlog (Invoiced + Pending)
+          </button>
+
+          <button
+            onClick={() => setBacklogMode('without')}
+            disabled={loading}
+            style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '6px',
+              border: backlogMode === 'without' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+              background: backlogMode === 'without' ? 'var(--gsh-teal)' : '#f8fafc',
+              color: backlogMode === 'without' ? '#ffffff' : '#475569',
+              fontWeight: backlogMode === 'without' ? 800 : 600,
+              fontSize: '0.75rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FileCheck style={{ width: '13px', height: '13px' }} />
+            Without Backlog (Invoiced Only)
+          </button>
+
+          <button
+            onClick={() => setBacklogMode('only')}
+            disabled={loading}
+            style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '6px',
+              border: backlogMode === 'only' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+              background: backlogMode === 'only' ? 'var(--gsh-teal)' : '#f8fafc',
+              color: backlogMode === 'only' ? '#ffffff' : '#475569',
+              fontWeight: backlogMode === 'only' ? 800 : 600,
+              fontSize: '0.75rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Package style={{ width: '13px', height: '13px' }} />
+            Only Backlog (Pending Orders)
+          </button>
         </div>
       </div>
 
@@ -158,16 +304,26 @@ const DisDashboardFyPage = () => {
       />
 
       {/* 3-Column Responsive Dashboard Layout */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', minHeight: '440px' }}>
         <DataLoaderOverlay loading={loading} title="Crunching Dis-Dashboard Analytics..." />
 
         <div className="dashboard-cards-grid" style={{ opacity: loading ? 0.4 : 1, transition: 'opacity 0.25s ease' }}>
         
         {/* CARD 1: Primary Sales Details (Top Left) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 0.75rem 0' }}>
             Primary Sales Details ({data?.month_label || 'July 2026'})
           </h3>
+
+          {/* Admin Formula Guide */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Monthly Primary Target from uploaded Dis Budget (dis_budget.primary_target). Pro-rated by days if date filter active."
+              actualFormula="Invoiced Sales (invoice_output.net_dom_amount) where Cust Grp = 'DISTRI' + Backlog Orders (outstanding_output.backlog_value_base_curr) where Cust Grp = 'DISTRI' (contract != 'GSTEA')."
+              dataSource="dis_budget + invoice_output + outstanding_output"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               {/* Pri:Act */}
@@ -199,9 +355,19 @@ const DisDashboardFyPage = () => {
 
         {/* CARD 2: RD Sales Details (Top Middle) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 0.75rem 0' }}>
             RD Sales Details ({data?.month_label || 'July 2026'})
           </h3>
+
+          {/* Admin Formula Guide */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Monthly RD (Redistribution) Target from uploaded Dis Budget (dis_budget.rd_target). Pro-rated by days if date filter active."
+              actualFormula="Total secondary sales value from Axienta SFA distributor synchronization (axienta_data.value)."
+              dataSource="dis_budget + axienta_data (Axienta SFA)"
+            />
+          )}
+
           <div className="gauge-card-content">
             <div className="gauge-card-bars">
               {/* RD:Act */}
@@ -233,9 +399,18 @@ const DisDashboardFyPage = () => {
 
         {/* CARD 3: Distributor Total Budget vs Actual FY 27' (Tall Right Column) */}
         <div className="glass-card dashboard-card-tall" style={{ padding: '1.25rem', gridRow: 'span 2', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1.25rem 0', textAlign: 'center' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 0.75rem 0', textAlign: 'center' }}>
             Distributor Total Budget vs Actual FY 27'
           </h3>
+
+          {/* Admin Formula Guide */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Annual Primary Target (12M sum of primary_target) vs Annual RD Target (12M sum of rd_target) from dis_budget."
+              actualFormula="Full Financial Year Invoiced Sales (DISTRI) + Backlog Orders vs Full Financial Year Axienta SFA RD Sales."
+              dataSource="dis_budget + invoice_output + outstanding_output + axienta_data"
+            />
+          )}
           
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', alignItems: 'flex-end', height: '240px', padding: '0 0.5rem' }}>
@@ -279,9 +454,19 @@ const DisDashboardFyPage = () => {
 
         {/* CARD 4: Primary Update of the Quarter wise (Bottom Left) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 0.75rem 0' }}>
             Primary Update of the Quarter wise
           </h3>
+
+          {/* Admin Formula Guide */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Monthly Primary Targets from dis_budget grouped into Q1 (Apr-Jun), Q2 (Jul-Sep), Q3 (Oct-Dec), Q4 (Jan-Mar)."
+              actualFormula="Monthly Invoiced Distributor Sales (DISTRI) + Active Month Pending Backlog Orders."
+              dataSource="invoice_output + outstanding_output + dis_budget"
+            />
+          )}
+
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.35rem', height: '140px', padding: '0 0.25rem' }}>
             {breakdown.map((q, i) => {
               const heightPx = q.pri_tgt > 0 ? Math.min((q.pri_act / q.pri_tgt) * 110, 130) : 0;
@@ -300,9 +485,19 @@ const DisDashboardFyPage = () => {
 
         {/* CARD 5: RD Update of the Quarter wise (Bottom Middle) */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}>
-          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 0.75rem 0' }}>
             RD Update of the Quarter wise
           </h3>
+
+          {/* Admin Formula Guide */}
+          {isAdmin && showAdminFormulas && (
+            <AdminFormulaBox
+              targetFormula="Monthly RD Targets from dis_budget grouped into Q1 (Apr-Jun), Q2 (Jul-Sep), Q3 (Oct-Dec), Q4 (Jan-Mar)."
+              actualFormula="Monthly RD Sales Value from Axienta SFA distributor synchronization (axienta_data.value)."
+              dataSource="axienta_data + dis_budget"
+            />
+          )}
+
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.35rem', height: '140px', padding: '0 0.25rem' }}>
             {breakdown.map((q, i) => {
               const heightPx = q.rd_tgt > 0 ? Math.min((q.rd_act / q.rd_tgt) * 110, 130) : 0;
@@ -318,9 +513,10 @@ const DisDashboardFyPage = () => {
             <span>1st QTR</span><span>2nd QTR</span><span>3rd QTR</span><span>4th QTR</span>
           </div>
         </div>
+
+        </div>
       </div>
     </div>
-  </div>
   );
 };
 

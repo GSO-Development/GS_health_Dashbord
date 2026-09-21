@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { Calendar, CheckCircle, ChevronRight, X, ArrowRight, Zap, Target } from 'lucide-react';
 
-const MONTH_TABS = [
+export const MONTH_TABS = [
   { key: 'april', label: 'Apr-26', monthNum: 4, year: 2026, fullName: 'April 2026' },
   { key: 'may', label: 'May-26', monthNum: 5, year: 2026, fullName: 'May 2026' },
   { key: 'june', label: 'Jun-26', monthNum: 6, year: 2026, fullName: 'June 2026' },
@@ -16,6 +16,17 @@ const MONTH_TABS = [
   { key: 'february', label: 'Feb-27', monthNum: 2, year: 2027, fullName: 'February 2027' },
   { key: 'march', label: 'Mar-27', monthNum: 3, year: 2027, fullName: 'March 2027' },
 ];
+
+export const getCurrentMonthKey = () => {
+  const d = new Date();
+  const m = d.getMonth(); // 0 = Jan, 1 = Feb, ... 8 = Sep
+  const monthMap = {
+    3: 'april', 4: 'may', 5: 'june', 6: 'july',
+    7: 'august', 8: 'september', 9: 'october', 10: 'november',
+    11: 'december', 0: 'january', 1: 'february', 2: 'march'
+  };
+  return monthMap[m] || 'september';
+};
 
 const MonthCalendarBar = ({
   selectedMonth,

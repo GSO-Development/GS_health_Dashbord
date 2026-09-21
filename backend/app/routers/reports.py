@@ -162,13 +162,19 @@ def get_total_range_fy(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    backlog_mode: Optional[str] = Query("with")
 ):
-    selected_month = month.lower().strip() if month and month.lower().strip() in FY_MONTH_ORDER else "july"
+    b_mode = (backlog_mode.lower().strip() if isinstance(backlog_mode, str) else "with")
+    if b_mode not in ["with", "without", "only"]:
+        b_mode = "with"
+
+    m_clean = month.lower().strip() if isinstance(month, str) else "july"
+    selected_month = m_clean if m_clean in FY_MONTH_ORDER else "july"
     
-    s_date = start_date.strip() if start_date and start_date.strip() else None
-    e_date = end_date.strip() if end_date and end_date.strip() else None
-    single_d = date.strip() if date and date.strip() else None
+    s_date = start_date.strip() if isinstance(start_date, str) and start_date.strip() else None
+    e_date = end_date.strip() if isinstance(end_date, str) and end_date.strip() else None
+    single_d = date.strip() if isinstance(date, str) and date.strip() else None
     if not s_date and single_d:
         s_date = single_d
         e_date = single_d
@@ -227,7 +233,7 @@ def get_total_range_fy(
 
         all_ranges = sorted(list(set(div_ranges + tb_ranges)))
 
-        if search:
+        if isinstance(search, str) and search.strip():
             s_term = search.lower().strip()
             all_ranges = [r for r in all_ranges if s_term in r.lower()]
 
@@ -299,16 +305,29 @@ def get_total_range_fy(
                 r_inv_map[(rk, inv_m)] = r_inv_map.get((rk, inv_m), 0.0) + act_val
 
         # 4. Bulk fetch outstanding backlog
-        cursor.execute("""
-            SELECT 
-                TRIM(o.catalog_group) as s_grp,
-                TRIM(o.catalog_no) as part_no,
-                COALESCE(TRIM(m.range_name), TRIM(o.catalog_group)) as r_name,
-                SUM(o.backlog_value_base_curr) as total_back
-            FROM outstanding_output o
-            LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
-            GROUP BY s_grp, part_no, r_name;
-        """)
+        if has_date_filter:
+            cursor.execute("""
+                SELECT 
+                    TRIM(o.catalog_group) as s_grp,
+                    TRIM(o.catalog_no) as part_no,
+                    COALESCE(TRIM(m.range_name), TRIM(o.catalog_group)) as r_name,
+                    SUM(o.backlog_value_base_curr) as total_back
+                FROM outstanding_output o
+                LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
+                WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s
+                GROUP BY s_grp, part_no, r_name;
+            """, (s_date, e_date))
+        else:
+            cursor.execute("""
+                SELECT 
+                    TRIM(o.catalog_group) as s_grp,
+                    TRIM(o.catalog_no) as part_no,
+                    COALESCE(TRIM(m.range_name), TRIM(o.catalog_group)) as r_name,
+                    SUM(o.backlog_value_base_curr) as total_back
+                FROM outstanding_output o
+                LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
+                GROUP BY s_grp, part_no, r_name;
+            """)
         sg_back_map = {}
         r_back_map = {}
         p_back_map = {}
@@ -378,18 +397,28 @@ def get_total_range_fy(
             sg_b_entry = sg_b_map.get(sg_k, {})
 
             sg_m_b = float(sg_b_entry.get(selected_month) or 0)
-            sg_m_a = sg_inv_map.get((sg_k, sel_m_num), 0.0)
+            sg_inv_m = sg_inv_map.get((sg_k, sel_m_num), 0.0)
 
             sg_c_b = sum(float(sg_b_entry.get(m) or 0) for m in cum_months)
-            sg_c_a = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in cum_m_nums)
+            sg_inv_c = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in cum_m_nums)
 
             sg_a_b = float(sg_b_entry.get('total') or 0)
-            sg_a_a = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in MONTH_NUM_MAP.values())
+            sg_inv_a = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in MONTH_NUM_MAP.values())
 
             sg_back = sg_back_map.get(sg_k, 0.0)
-            sg_m_a += sg_back
-            sg_c_a += sg_back
-            sg_a_a += sg_back
+
+            if b_mode == "without":
+                sg_m_a = sg_inv_m
+                sg_c_a = sg_inv_c
+                sg_a_a = sg_inv_a
+            elif b_mode == "only":
+                sg_m_a = sg_back
+                sg_c_a = sg_back
+                sg_a_a = sg_back
+            else:  # "with"
+                sg_m_a = sg_inv_m + sg_back
+                sg_c_a = sg_inv_c + sg_back
+                sg_a_a = sg_inv_a + sg_back
 
             sg_mb_v = round(sg_m_b, 2)
             sg_ma_v = round(sg_m_a, 2)
@@ -411,18 +440,28 @@ def get_total_range_fy(
                 pk = p_no.lower()
 
                 p_mb = float(p.get(selected_month) or 0)
-                p_ma = p_inv_map.get((pk, sel_m_num), 0.0)
+                p_inv_m = p_inv_map.get((pk, sel_m_num), 0.0)
 
                 p_cb = sum(float(p.get(m) or 0) for m in cum_months)
-                p_ca = sum(p_inv_map.get((pk, mn), 0.0) for mn in cum_m_nums)
+                p_inv_c = sum(p_inv_map.get((pk, mn), 0.0) for mn in cum_m_nums)
 
                 p_ab = float(p.get('total') or 0)
-                p_aa = sum(p_inv_map.get((pk, mn), 0.0) for mn in MONTH_NUM_MAP.values())
+                p_inv_a = sum(p_inv_map.get((pk, mn), 0.0) for mn in MONTH_NUM_MAP.values())
 
                 p_back = p_back_map.get(pk, 0.0)
-                p_ma += p_back
-                p_ca += p_back
-                p_aa += p_back
+
+                if b_mode == "without":
+                    p_ma = p_inv_m
+                    p_ca = p_inv_c
+                    p_aa = p_inv_a
+                elif b_mode == "only":
+                    p_ma = p_back
+                    p_ca = p_back
+                    p_aa = p_back
+                else:  # "with"
+                    p_ma = p_inv_m + p_back
+                    p_ca = p_inv_c + p_back
+                    p_aa = p_inv_a + p_back
 
                 p_mb_v = round(p_mb, 2)
                 p_ma_v = round(p_ma, 2)
@@ -469,14 +508,23 @@ def get_total_range_fy(
         c_b = sum(sg['c_budget'] for sg in sales_groups_list)
         a_b = sum(sg['a_budget'] for sg in sales_groups_list)
 
-        m_a = r_inv_map.get((r_key, sel_m_num), 0.0)
-        c_a = sum(r_inv_map.get((r_key, mn), 0.0) for mn in cum_m_nums)
-        a_a = sum(r_inv_map.get((r_key, mn), 0.0) for mn in MONTH_NUM_MAP.values())
-
+        r_inv_m = r_inv_map.get((r_key, sel_m_num), 0.0)
+        r_inv_c = sum(r_inv_map.get((r_key, mn), 0.0) for mn in cum_m_nums)
+        r_inv_a = sum(r_inv_map.get((r_key, mn), 0.0) for mn in MONTH_NUM_MAP.values())
         r_back = r_back_map.get(r_key, 0.0)
-        m_a += r_back
-        c_a += r_back
-        a_a += r_back
+
+        if b_mode == "without":
+            m_a = r_inv_m
+            c_a = r_inv_c
+            a_a = r_inv_a
+        elif b_mode == "only":
+            m_a = r_back
+            c_a = r_back
+            a_a = r_back
+        else:  # "with"
+            m_a = r_inv_m + r_back
+            c_a = r_inv_c + r_back
+            a_a = r_inv_a + r_back
 
         # Fallback to sum of sales group actuals if higher
         sg_m_a_sum = sum(sg['m_actual'] for sg in sales_groups_list)

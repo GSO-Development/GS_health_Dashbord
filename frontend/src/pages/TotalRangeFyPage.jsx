@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box, Eye, EyeOff } from 'lucide-react';
+import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight, ChevronDown, Package, Hash, Box, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const TotalRangeFyPage = () => {
-  const [selectedMonth, setSelectedMonth] = useState('july');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
   const [searchTerm, setSearchTerm] = useState('');
   const [reportData, setReportData] = useState([]);
   const [summaryTotals, setSummaryTotals] = useState(null);
@@ -36,7 +37,7 @@ const TotalRangeFyPage = () => {
   const loadRangeReport = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, search: searchTerm };
+      const params = { month: selectedMonth, search: searchTerm, backlog_mode: backlogMode };
       if (startDate && endDate) {
         if (startDate === endDate) {
           params.date = startDate;
@@ -59,7 +60,7 @@ const TotalRangeFyPage = () => {
 
   useEffect(() => {
     loadRangeReport();
-  }, [selectedMonth, startDate, endDate, searchTerm]);
+  }, [selectedMonth, startDate, endDate, searchTerm, backlogMode]);
 
   const toggleRowExpand = (divisionName) => {
     setExpandedRows(prev => {
@@ -109,6 +110,102 @@ const TotalRangeFyPage = () => {
         </div>
       </div>
 
+      {/* ─── Backlog Calculation Mode Switcher (With / Without / Only Backlog) ─── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
+        background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%)',
+        border: '1px solid rgba(226, 232, 240, 0.9)',
+        borderRadius: '12px',
+        padding: '0.65rem 1rem',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
+            Backlog Calculation Mode:
+          </span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'with' ? '#10b981' : (backlogMode === 'without' ? '#6366f1' : '#f59e0b') }}>
+            {backlogMode === 'with' && '● Invoiced + Pending Backlog (Default)'}
+            {backlogMode === 'without' && '● Invoiced Sales Only (Excl. Backlog)'}
+            {backlogMode === 'only' && '● Pending Backlog Orders Only'}
+          </span>
+        </div>
+
+        <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '8px', padding: '3px', gap: '3px' }}>
+          <button
+            type="button"
+            onClick={() => setBacklogMode('with')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '6px',
+              border: 'none',
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: backlogMode === 'with' ? '#10b981' : 'transparent',
+              color: backlogMode === 'with' ? '#ffffff' : '#64748b',
+              boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(16, 185, 129, 0.35)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <CheckCircle2 style={{ width: '13px', height: '13px' }} />
+            With Backlog (Default)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBacklogMode('without')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '6px',
+              border: 'none',
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: backlogMode === 'without' ? '#6366f1' : 'transparent',
+              color: backlogMode === 'without' ? '#ffffff' : '#64748b',
+              boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(99, 102, 241, 0.35)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Layers style={{ width: '13px', height: '13px' }} />
+            Without Backlog (Invoiced Only)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBacklogMode('only')}
+            style={{
+              padding: '0.35rem 0.85rem',
+              borderRadius: '6px',
+              border: 'none',
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: backlogMode === 'only' ? '#f59e0b' : 'transparent',
+              color: backlogMode === 'only' ? '#ffffff' : '#64748b',
+              boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(245, 158, 11, 0.35)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Package style={{ width: '13px', height: '13px' }} />
+            Only Backlog (Pending Orders)
+          </button>
+        </div>
+      </div>
+
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
         selectedMonth={selectedMonth}
@@ -145,7 +242,7 @@ const TotalRangeFyPage = () => {
       </div>
 
       {/* Main Datatable with Multi-Level Perfectly Aligned Tree Rows */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', minHeight: '440px' }}>
         <DataLoaderOverlay loading={loading} title="Crunching Total-Range Wise Sales Analytics..." />
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', opacity: loading ? 0.35 : 1, transition: 'opacity 0.25s ease' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>

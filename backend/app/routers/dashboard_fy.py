@@ -21,15 +21,16 @@ MONTH_NAMES = {
 }
 
 def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    selected_month = month.lower().strip() if month and month.lower().strip() in MONTH_MAPPING else "july"
+    m_clean = month.lower().strip() if isinstance(month, str) else "july"
+    selected_month = m_clean if m_clean in MONTH_MAPPING else "july"
     month_num = MONTH_MAPPING[selected_month]
     month_name = MONTH_NAMES[selected_month]
     year = 2027 if month_num in [1, 2, 3] else 2026
     _, days_in_month = calendar.monthrange(year, month_num)
 
-    s_date = start_date.strip() if start_date and start_date.strip() else None
-    e_date = end_date.strip() if end_date and end_date.strip() else None
-    single_d = date.strip() if date and date.strip() else None
+    s_date = start_date.strip() if isinstance(start_date, str) and start_date.strip() else None
+    e_date = end_date.strip() if isinstance(end_date, str) and end_date.strip() else None
+    single_d = date.strip() if isinstance(date, str) and date.strip() else None
 
     if not s_date and single_d:
         s_date = single_d
@@ -336,7 +337,8 @@ def get_dis_dashboard_fy_overview(
     month: Optional[str] = Query("july"),
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None)
+    end_date: Optional[str] = Query(None),
+    backlog_mode: Optional[str] = Query("with")
 ):
     df_info = resolve_date_filter(month, date, start_date, end_date)
     selected_month = df_info["selected_month"]
@@ -347,6 +349,7 @@ def get_dis_dashboard_fy_overview(
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
     has_date_filter = filter_start is not None
+    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -386,7 +389,12 @@ def get_dis_dashboard_fy_overview(
             """)
         pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
-        pri_actual = pri_inv + pri_back
+        if mode == "without":
+            pri_actual = pri_inv
+        elif mode == "only":
+            pri_actual = pri_back
+        else:
+            pri_actual = pri_inv + pri_back
 
         cursor.execute("""
             SELECT COALESCE(SUM(primary_target), 0) as pri_target 
@@ -438,7 +446,14 @@ def get_dis_dashboard_fy_overview(
               AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
         """)
         fy_pri_inv = float(cursor.fetchone()['fy_pri_inv'] or 0.0)
-        fy_pri_actual = fy_pri_inv + pri_back
+
+        if mode == "without":
+            fy_pri_actual = fy_pri_inv
+        elif mode == "only":
+            fy_pri_actual = pri_back
+        else:
+            fy_pri_actual = fy_pri_inv + pri_back
+
         fy_pri_pct = round((fy_pri_actual / fy_pri_target) * 100) if fy_pri_target > 0 else 0
 
         cursor.execute("SELECT COALESCE(SUM(value), 0) as fy_rd_act FROM axienta_data;")
@@ -463,7 +478,13 @@ def get_dis_dashboard_fy_overview(
                   AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL);
             """, (m_code, m_yr))
             m_pri_inv = float(cursor.fetchone()['inv'] or 0.0)
-            m_pri_act = m_pri_inv + (pri_back if m_code == month_num else 0.0)
+
+            if mode == "without":
+                m_pri_act = m_pri_inv
+            elif mode == "only":
+                m_pri_act = (pri_back if m_code == month_num else 0.0)
+            else:
+                m_pri_act = m_pri_inv + (pri_back if m_code == month_num else 0.0)
 
             cursor.execute("""
                 SELECT COALESCE(SUM(primary_target), 0) as tgt 
@@ -507,9 +528,12 @@ def get_dis_dashboard_fy_overview(
         "end_date": filter_end,
         "days_count": days_count,
         "month_label": df_info["label"],
+        "backlog_mode": mode,
         "primary_sales": {
             "actual": round(pri_actual, 2),
             "target": round(pri_target, 2),
+            "invoiced": round(pri_inv, 2),
+            "backlog": round(pri_back, 2),
             "pct": pri_pct,
             "variance": round(pri_variance, 2),
         },
@@ -537,8 +561,12 @@ def get_distri_range_fy(
     month: Optional[str] = Query("july"),
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None)
+    end_date: Optional[str] = Query(None),
+    backlog_mode: Optional[str] = Query("with")
 ):
+    b_mode = (backlog_mode or "with").lower().strip()
+    if b_mode not in ["with", "without", "only"]:
+        b_mode = "with"
     df_info = resolve_date_filter(month, date, start_date, end_date)
     selected_month = df_info["selected_month"]
     month_num = df_info["month_num"]
@@ -711,12 +739,25 @@ def get_distri_range_fy(
 
             item_pri_tgt = float(b_info.get('m_pri_tgt', 0.0))
             item_rd_tgt = float(b_info.get('m_rd_tgt', 0.0))
-            item_pri_act = float(inv_m_map.get(pno, 0.0)) + float(back_map.get(pno, 0.0))
+            
+            m_inv_val = float(inv_m_map.get(pno, 0.0))
+            c_inv_val = float(inv_c_map.get(pno, 0.0))
+            b_val = float(back_map.get(pno, 0.0))
+            
+            if b_mode == "without":
+                item_pri_act = m_inv_val
+                item_c_pri_act = c_inv_val
+            elif b_mode == "only":
+                item_pri_act = b_val
+                item_c_pri_act = b_val
+            else:  # "with"
+                item_pri_act = m_inv_val + b_val
+                item_c_pri_act = c_inv_val + b_val
+
             item_rd_act = float(axienta_m_map.get(pno, 0.0))
 
             item_c_pri_tgt = float(b_c_info.get('c_pri_tgt', 0.0))
             item_c_rd_tgt = float(b_c_info.get('c_rd_tgt', 0.0))
-            item_c_pri_act = float(inv_c_map.get(pno, 0.0)) + float(back_map.get(pno, 0.0))
             item_c_rd_act = float(axienta_c_map.get(pno, 0.0))
 
             item_obj = {
