@@ -173,12 +173,12 @@ def get_total_range_fy(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with"),
+    backlog_mode: Optional[str] = Query("without"),
     contracts: Optional[str] = Query(None)
 ):
-    b_mode = (backlog_mode.lower().strip() if isinstance(backlog_mode, str) else "with")
+    b_mode = (backlog_mode.lower().strip() if isinstance(backlog_mode, str) else "without")
     if b_mode not in ["with", "without", "only"]:
-        b_mode = "with"
+        b_mode = "without"
 
     m_clean = month.lower().strip() if isinstance(month, str) else "july"
     selected_month = m_clean if m_clean in FY_MONTH_ORDER else "july"

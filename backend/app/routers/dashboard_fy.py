@@ -110,7 +110,7 @@ def get_dashboard_fy_overview(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with"),
+    backlog_mode: Optional[str] = Query("without"),
     contracts: Optional[str] = Query(None)
 ):
     df_info = resolve_date_filter(month, date, start_date, end_date)
@@ -122,7 +122,7 @@ def get_dashboard_fy_overview(
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
     has_date_filter = filter_start is not None
-    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
+    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "without"
 
     contract_list = []
     if isinstance(contracts, str) and contracts.strip():
@@ -335,7 +335,7 @@ def get_dis_dashboard_fy_overview(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with"),
+    backlog_mode: Optional[str] = Query("without"),
     contracts: Optional[str] = Query(None)
 ):
     df_info = resolve_date_filter(month, date, start_date, end_date)
@@ -347,7 +347,7 @@ def get_dis_dashboard_fy_overview(
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
     has_date_filter = filter_start is not None
-    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "with"
+    mode = backlog_mode.lower().strip() if backlog_mode and backlog_mode.lower().strip() in ["with", "without", "only"] else "without"
 
     contract_list = []
     if isinstance(contracts, str) and contracts.strip():
@@ -566,12 +566,12 @@ def get_distri_range_fy(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with"),
+    backlog_mode: Optional[str] = Query("without"),
     contracts: Optional[str] = Query(None)
 ):
-    b_mode = (backlog_mode or "with").lower().strip()
+    b_mode = (backlog_mode or "without").lower().strip()
     if b_mode not in ["with", "without", "only"]:
-        b_mode = "with"
+        b_mode = "without"
     df_info = resolve_date_filter(month, date, start_date, end_date)
     selected_month = df_info["selected_month"]
     month_num = df_info["month_num"]
