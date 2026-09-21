@@ -674,67 +674,69 @@ const UploadAxientaDataPage = () => {
                 </p>
               </div>
 
-              {/* Specific Date Filter Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-hover)', padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-                  <Calendar style={{ width: '15px', height: '15px', color: 'var(--gsh-teal)' }} />
-                  <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Specific Date:</label>
-                  <select
+              {/* Single Clean Date Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  background: 'var(--bg-hover)',
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: 'var(--radius-xs)',
+                  border: tableSelectedDate ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
+                  boxShadow: tableSelectedDate ? '0 2px 8px rgba(0,168,150,0.15)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}>
+                  <Calendar style={{ width: '15px', height: '15px', color: tableSelectedDate ? 'var(--gsh-teal)' : 'var(--text-muted)' }} />
+                  <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    Select Date:
+                  </label>
+                  <input
+                    type="date"
                     value={tableSelectedDate}
                     onChange={e => {
                       setTableSelectedDate(e.target.value);
                       setTablePage(1);
                     }}
                     style={{
-                      padding: '0.3rem 0.5rem',
+                      padding: '0.3rem 0.55rem',
                       borderRadius: '4px',
                       border: '1px solid var(--border-color)',
                       background: 'var(--bg-card)',
                       color: 'var(--text-main)',
-                      fontSize: '0.8rem',
+                      fontSize: '0.825rem',
                       fontWeight: 700,
-                      outline: 'none'
+                      outline: 'none',
+                      cursor: 'pointer'
                     }}
-                  >
-                    <option value="">All Dates in {monthLabel} {selectedYear}</option>
-                    {uploadedDatesList.map(dt => (
-                      <option key={dt} value={dt}>{dt} ({calendarSummary[dt]?.row_count || 0} rows)</option>
-                    ))}
-                  </select>
-
+                  />
                   {tableSelectedDate && (
                     <button
+                      type="button"
                       onClick={() => {
                         setTableSelectedDate('');
                         setTablePage(1);
                       }}
-                      title="Clear Date Filter"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gsh-red)', padding: '2px', display: 'flex', alignItems: 'center' }}
+                      title="Clear Date Filter (Show Full Month)"
+                      style={{
+                        background: 'rgba(239,68,68,0.1)',
+                        border: '1px solid rgba(239,68,68,0.3)',
+                        borderRadius: '4px',
+                        color: '#ef4444',
+                        padding: '0.25rem 0.5rem',
+                        fontSize: '0.725rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
                     >
-                      <X style={{ width: '14px', height: '14px' }} />
+                      <X style={{ width: '12px', height: '12px' }} />
+                      Clear
                     </button>
                   )}
                 </div>
-
-                {/* Custom Date Input for manual selection */}
-                <input
-                  type="date"
-                  value={tableSelectedDate}
-                  onChange={e => {
-                    setTableSelectedDate(e.target.value);
-                    setTablePage(1);
-                  }}
-                  style={{
-                    padding: '0.35rem 0.6rem',
-                    borderRadius: 'var(--radius-xs)',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-hover)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    outline: 'none'
-                  }}
-                />
               </div>
             </div>
 
