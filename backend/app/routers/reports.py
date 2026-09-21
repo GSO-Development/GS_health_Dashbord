@@ -259,10 +259,9 @@ def get_total_range_fy(
 
         # 3. Dynamic Discovery of any additional sales groups from invoice_output and outstanding_output
         cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_group) as s_grp 
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp 
             FROM invoice_output 
-            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
+            WHERE LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             sg_clean = r['s_grp'].strip()
@@ -275,10 +274,9 @@ def get_total_range_fy(
                 sg_to_range[sg_key] = sg_clean
 
         cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_group) as s_grp 
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp 
             FROM outstanding_output 
-            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
+            WHERE LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
             sg_clean = r['s_grp'].strip()
@@ -314,7 +312,7 @@ def get_total_range_fy(
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
-                    TRIM(i.catalog_group) as s_grp,
+                    COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
@@ -326,7 +324,7 @@ def get_total_range_fy(
         else:
             inv_query = f"""
                 SELECT 
-                    TRIM(i.catalog_group) as s_grp,
+                    COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
@@ -360,7 +358,7 @@ def get_total_range_fy(
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
-                    TRIM(o.catalog_group) as s_grp,
+                    COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
@@ -371,7 +369,7 @@ def get_total_range_fy(
         else:
             out_query = f"""
                 SELECT 
-                    TRIM(o.catalog_group) as s_grp,
+                    COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
@@ -425,10 +423,9 @@ def get_total_range_fy(
 
         # Also fetch distinct catalog items / subcodes from invoice_output
         cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(description) as product_sku
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp, TRIM(catalog_no) as part_no, TRIM(description) as product_sku
             FROM invoice_output
-            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+            WHERE catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
               AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
@@ -451,10 +448,9 @@ def get_total_range_fy(
 
         # Also fetch distinct catalog items / subcodes from outstanding_output
         cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp, TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku
             FROM outstanding_output
-            WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+            WHERE catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
               AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
         """)
         for r in cursor.fetchall():
