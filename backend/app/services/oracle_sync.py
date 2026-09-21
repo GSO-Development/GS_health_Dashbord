@@ -217,6 +217,8 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
                         cust_grp, catalog_group, region_code, district_code, market_code,
                         country_code, salesman_code, authorize_code, price_list_no, priority,
                         line_item_no
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """
                 # Filter out any HET0 catalog rows
                 filtered_orders = [r for r in order_rows if not (str(r[7] or '').strip().upper().startswith('HET0'))]
                 cursor.executemany(ord_sql, filtered_orders)
