@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Layers, DollarSign, X, AlertCircle, ChevronLeft, ChevronRight, Package, Box, Database, Loader, LayoutGrid, Table as TableIcon, Search, Filter, Eye, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Calendar, Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, 
+  Layers, DollarSign, X, AlertCircle, ChevronLeft, ChevronRight, Package, 
+  Box, Database, Loader, LayoutGrid, Table as TableIcon, Search, Filter, 
+  Eye, Clock, ArrowUpDown, ArrowUp, ArrowDown, Download, Hash
+} from 'lucide-react';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const MONTHS_LIST = [
+  { num: 0, name: 'All Months (Full Year)' },
   { num: 1, name: 'January' },
   { num: 2, name: 'February' },
   { num: 3, name: 'March' },
@@ -22,7 +28,6 @@ const MONTHS_LIST = [
 const YEARS_LIST = [2026, 2027, 2025, 2024];
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const FULL_DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const UploadAxientaDataPage = () => {
   const [selectedYear, setSelectedYear] = useState(2026);
@@ -30,12 +35,25 @@ const UploadAxientaDataPage = () => {
   const [calendarSummary, setCalendarSummary] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // View Mode: 'cards' (Calendar Grid) | 'table' (Data Table)
+  // View Mode: 'cards' (Calendar Grid) | 'table' (Products Table)
   const [viewMode, setViewMode] = useState('cards');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'uploaded' | 'pending'
 
-  // Selected Date Modal Popup State
+  // Table View specific states
+  const [tableSelectedDate, setTableSelectedDate] = useState(''); // Specific date filter 'YYYY-MM-DD' or ''
+  const [tableSearch, setTableSearch] = useState('');
+  const [tableSearchDebounced, setTableSearchDebounced] = useState('');
+  const [tablePage, setTablePage] = useState(1);
+  const [tableLimit, setTableLimit] = useState(50);
+  const [tableSortBy, setTableSortBy] = useState('entry_date');
+  const [tableSortOrder, setTableSortOrder] = useState('desc');
+  const [tableRecords, setTableRecords] = useState([]);
+  const [tableTotalCount, setTableTotalCount] = useState(0);
+  const [tableTotalQty, setTableTotalQty] = useState(0);
+  const [tableTotalValue, setTableTotalValue] = useState(0);
+  const [tableTotalPages, setTableTotalPages] = useState(1);
+  const [loadingTable, setLoadingTable] = useState(false);
+
+  // Selected Date Modal Popup State (for Card / Day Click)
   const [activeDate, setActiveDate] = useState(null); // 'YYYY-MM-DD'
   const [dailyRecords, setDailyRecords] = useState([]);
   const [dailyTotalCount, setDailyTotalCount] = useState(0);
@@ -59,16 +77,29 @@ const UploadAxientaDataPage = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // Debounce search input
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setTableSearchDebounced(tableSearch);
+      setTablePage(1); // Reset to page 1 on new search
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [tableSearch]);
+
   const handleSyncData = async () => {
     setSyncing(true);
     try {
+      const monthToSync = selectedMonthNum > 0 ? selectedMonthNum : 7;
       const res = await api.post('/axienta/sync-data', {
         year: selectedYear,
-        month: selectedMonthNum
+        month: monthToSync
       }, { timeout: 180000 });
       if (res.data && res.data.success) {
         showToast(res.data.message || `Synced successfully!`, 'success');
         loadCalendarSummary();
+        if (viewMode === 'table') {
+          fetchTableRecords();
+        }
       }
     } catch (err) {
       const errMsg = err.response?.data?.detail || 'Failed to sync Axienta data from MS SQL Server.';
@@ -78,7 +109,7 @@ const UploadAxientaDataPage = () => {
   };
 
   const handleSyncDay = async (dateStr, e) => {
-    e.stopPropagation(); // Prevent opening the day modal
+    if (e) e.stopPropagation();
     const [y, m, d] = dateStr.split('-').map(Number);
     setSyncingDay(dateStr);
     try {
@@ -90,6 +121,9 @@ const UploadAxientaDataPage = () => {
       if (res.data && res.data.success) {
         showToast(res.data.message || `Synced ${dateStr} successfully!`, 'success');
         loadCalendarSummary();
+        if (viewMode === 'table') {
+          fetchTableRecords();
+        }
       }
     } catch (err) {
       const errMsg = err.response?.data?.detail || `Failed to sync data for ${dateStr} from MS SQL Server.`;
@@ -101,8 +135,9 @@ const UploadAxientaDataPage = () => {
   const loadCalendarSummary = async () => {
     setLoading(true);
     try {
+      const monthParam = selectedMonthNum > 0 ? selectedMonthNum : 7;
       const res = await api.get('/axienta/calendar-summary', {
-        params: { year: selectedYear, month: selectedMonthNum }
+        params: { year: selectedYear, month: monthParam }
       });
       if (res.data) {
         setCalendarSummary(res.data.summary || {});
@@ -111,6 +146,45 @@ const UploadAxientaDataPage = () => {
       showToast('Failed to load Axienta calendar summary.', 'error');
     }
     setLoading(false);
+  };
+
+  const fetchTableRecords = async () => {
+    setLoadingTable(true);
+    try {
+      const params = {
+        page: tablePage,
+        limit: tableLimit,
+        sort_by: tableSortBy,
+        sort_order: tableSortOrder
+      };
+
+      if (tableSelectedDate && tableSelectedDate.trim()) {
+        params.date = tableSelectedDate.trim();
+      } else {
+        if (selectedYear) params.year = selectedYear;
+        if (selectedMonthNum && selectedMonthNum > 0) params.month = selectedMonthNum;
+      }
+
+      if (tableSearchDebounced && tableSearchDebounced.trim()) {
+        params.search = tableSearchDebounced.trim();
+      }
+
+      const res = await api.get('/axienta/records', { params });
+      if (res.data) {
+        setTableRecords(res.data.rows || []);
+        setTableTotalCount(res.data.total_count || 0);
+        setTableTotalQty(res.data.total_qty || 0);
+        setTableTotalValue(res.data.total_value || 0);
+        setTableTotalPages(res.data.total_pages || 1);
+      }
+    } catch {
+      setTableRecords([]);
+      setTableTotalCount(0);
+      setTableTotalQty(0);
+      setTableTotalValue(0);
+      setTableTotalPages(1);
+    }
+    setLoadingTable(false);
   };
 
   const loadDailyRecords = async (dateStr) => {
@@ -135,6 +209,12 @@ const UploadAxientaDataPage = () => {
   useEffect(() => {
     loadCalendarSummary();
   }, [selectedYear, selectedMonthNum]);
+
+  useEffect(() => {
+    if (viewMode === 'table') {
+      fetchTableRecords();
+    }
+  }, [viewMode, selectedYear, selectedMonthNum, tableSelectedDate, tableSearchDebounced, tablePage, tableLimit, tableSortBy, tableSortOrder]);
 
   const handleDateClick = (dateStr) => {
     setActiveDate(dateStr);
@@ -185,6 +265,9 @@ const UploadAxientaDataPage = () => {
         setSelectedFile(null);
         loadDailyRecords(activeDate);
         loadCalendarSummary();
+        if (viewMode === 'table') {
+          fetchTableRecords();
+        }
       }
     } catch (err) {
       const errorMsg = err.response?.data?.detail || 'Failed to upload Axienta Excel file. Please verify columns: Product ID, Product, Qty, Value.';
@@ -195,8 +278,9 @@ const UploadAxientaDataPage = () => {
 
   // Helper: Generate calendar day grid cells
   const getCalendarCells = () => {
-    const firstDay = new Date(selectedYear, selectedMonthNum - 1, 1);
-    const lastDay = new Date(selectedYear, selectedMonthNum, 0);
+    const month = selectedMonthNum > 0 ? selectedMonthNum : 7;
+    const firstDay = new Date(selectedYear, month - 1, 1);
+    const lastDay = new Date(selectedYear, month, 0);
     const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay(); // 0 = Sun
 
@@ -207,70 +291,34 @@ const UploadAxientaDataPage = () => {
     }
     // Days of month
     for (let d = 1; d <= daysInMonth; d++) {
-      const dStr = `${selectedYear}-${String(selectedMonthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dStr = `${selectedYear}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       cells.push({ dayNum: d, dateStr: dStr });
     }
     return cells;
   };
 
-  // Compute monthly table records
-  const monthTableData = useMemo(() => {
-    const lastDay = new Date(selectedYear, selectedMonthNum, 0);
-    const daysInMonth = lastDay.getDate();
-    const list = [];
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateObj = new Date(selectedYear, selectedMonthNum - 1, d);
-      const dStr = `${selectedYear}-${String(selectedMonthNum).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const dayOfWeekShort = DAYS_OF_WEEK[dateObj.getDay()];
-      const dayOfWeekFull = FULL_DAYS_OF_WEEK[dateObj.getDay()];
-      const daySummary = calendarSummary[dStr];
-      const hasData = Boolean(daySummary && daySummary.row_count > 0);
-      const rowCount = daySummary?.row_count || 0;
-      const dailyValue = daySummary?.daily_value ?? daySummary?.total_value ?? 0;
-      const sheetTotalValue = daySummary?.sheet_total_value ?? daySummary?.total_value ?? 0;
-
-      list.push({
-        dayNum: d,
-        dateStr: dStr,
-        dayOfWeekShort,
-        dayOfWeekFull,
-        isSunday: dateObj.getDay() === 0,
-        hasData,
-        rowCount,
-        dailyValue,
-        sheetTotalValue
-      });
-    }
-    return list;
-  }, [selectedYear, selectedMonthNum, calendarSummary]);
-
-  // Filter table data by search query and status
-  const filteredTableData = useMemo(() => {
-    return monthTableData.filter(item => {
-      if (statusFilter === 'uploaded' && !item.hasData) return false;
-      if (statusFilter === 'pending' && item.hasData) return false;
-
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase().trim();
-        const matchDate = item.dateStr.toLowerCase().includes(q);
-        const matchDayNum = String(item.dayNum) === q || `day ${item.dayNum}`.includes(q);
-        const matchDayName = item.dayOfWeekFull.toLowerCase().includes(q) || item.dayOfWeekShort.toLowerCase().includes(q);
-        const matchStatus = (item.hasData ? 'uploaded' : 'pending').includes(q);
-        const matchValue = String(item.dailyValue).includes(q) || String(item.sheetTotalValue).includes(q);
-        return matchDate || matchDayNum || matchDayName || matchStatus || matchValue;
-      }
-      return true;
-    });
-  }, [monthTableData, searchTerm, statusFilter]);
-
   const calendarCells = getCalendarCells();
   const monthLabel = MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name || 'July';
 
-  // Month Total Value & Rows
+  // Month Total Value & Rows for Calendar KPIs
   const totalUploadedDays = Object.keys(calendarSummary).length;
   const monthTotalRows = Object.values(calendarSummary).reduce((acc, curr) => acc + (curr.row_count || 0), 0);
   const monthTotalValue = Object.values(calendarSummary).reduce((acc, curr) => acc + (curr.total_value || 0), 0);
+
+  // Available uploaded dates list for quick dropdown filter
+  const uploadedDatesList = useMemo(() => {
+    return Object.keys(calendarSummary).sort();
+  }, [calendarSummary]);
+
+  const handleSort = (col) => {
+    if (tableSortBy === col) {
+      setTableSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTableSortBy(col);
+      setTableSortOrder('asc');
+    }
+    setTablePage(1);
+  };
 
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -288,10 +336,12 @@ const UploadAxientaDataPage = () => {
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Calendar style={{ width: '24px', height: '24px', color: 'var(--gsh-teal)' }} />
-            Upload Axienta Data ({viewMode === 'cards' ? 'Calendar Card View' : 'Data Table View'})
+            Upload Axienta Data ({viewMode === 'cards' ? 'Calendar Card View' : 'Products Table View'})
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Select Month & Year. Switch between Calendar Card View and Data Table View. Click any day to upload Excel sheets or inspect records.
+            {viewMode === 'cards' 
+              ? 'Select Month & Year. Click any date card to upload Excel sheets, sync days, or inspect daily totals.' 
+              : 'Browse, search, and filter all Axienta product records by Year, Month, Date, or SKU Name.'}
           </p>
         </div>
 
@@ -304,7 +354,11 @@ const UploadAxientaDataPage = () => {
               <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Year:</label>
               <select
                 value={selectedYear}
-                onChange={e => setSelectedYear(Number(e.target.value))}
+                onChange={e => {
+                  setSelectedYear(Number(e.target.value));
+                  setTableSelectedDate('');
+                  setTablePage(1);
+                }}
                 style={{ padding: '0.4rem 0.55rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 800, outline: 'none' }}
               >
                 {YEARS_LIST.map(y => (
@@ -317,7 +371,11 @@ const UploadAxientaDataPage = () => {
               <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Month:</label>
               <select
                 value={selectedMonthNum}
-                onChange={e => setSelectedMonthNum(Number(e.target.value))}
+                onChange={e => {
+                  setSelectedMonthNum(Number(e.target.value));
+                  setTableSelectedDate('');
+                  setTablePage(1);
+                }}
                 style={{ padding: '0.4rem 0.55rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-hover)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 800, outline: 'none' }}
               >
                 {MONTHS_LIST.map(m => (
@@ -327,7 +385,10 @@ const UploadAxientaDataPage = () => {
             </div>
 
             <button
-              onClick={loadCalendarSummary}
+              onClick={() => {
+                loadCalendarSummary();
+                if (viewMode === 'table') fetchTableRecords();
+              }}
               title="Refresh Data"
               style={{ padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
             >
@@ -358,13 +419,16 @@ const UploadAxientaDataPage = () => {
               }}
             >
               <LayoutGrid style={{ width: '14px', height: '14px' }} />
-              Card View
+              Card View (Calendar)
             </button>
 
             <button
               type="button"
-              onClick={() => setViewMode('table')}
-              title="Data Table View"
+              onClick={() => {
+                setViewMode('table');
+                setTablePage(1);
+              }}
+              title="Products Data Table View"
               style={{
                 padding: '0.4rem 0.85rem',
                 borderRadius: '6px',
@@ -382,7 +446,7 @@ const UploadAxientaDataPage = () => {
               }}
             >
               <TableIcon style={{ width: '14px', height: '14px' }} />
-              Table View
+              Table View (Products)
             </button>
           </div>
 
@@ -428,451 +492,609 @@ const UploadAxientaDataPage = () => {
         </button>
       </div>
 
-      {/* Top Monthly Summary KPI Bar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-        <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(0,168,150,0.12)', color: 'var(--gsh-teal)' }}>
-            <Calendar style={{ width: '24px', height: '24px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>UPLOADED DAYS ({monthLabel.toUpperCase()} {selectedYear})</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>{totalUploadedDays} Days</div>
-          </div>
-        </div>
-
-        <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-            <Layers style={{ width: '24px', height: '24px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL AXIENTA ROWS</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>{monthTotalRows.toLocaleString()}</div>
-          </div>
-        </div>
-
-        <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(200,16,46,0.12)', color: 'var(--gsh-red)' }}>
-            <DollarSign style={{ width: '24px', height: '24px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL MONTH AXIENTA VALUE (LKR)</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--gsh-red)' }}>{fmt(monthTotalValue)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── CONDITIONAL VIEW: CARD VIEW (CALENDAR) vs TABLE VIEW ─── */}
+      {/* ─── CONDITIONAL VIEW ─── */}
       {viewMode === 'cards' ? (
-        /* ─── BIG CALENDAR CARD VIEW ─── */
-        <div className="glass-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Calendar Title Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-              📅 {monthLabel} {selectedYear} Axienta Daily Upload Calendar Grid
-            </h3>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-              Click any day card to upload Excel sheet or inspect records
-            </span>
-          </div>
-
-          {/* Days of Week Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
-            {DAYS_OF_WEEK.map((d, i) => (
-              <div key={d} style={{ padding: '0.5rem', fontSize: '0.8rem', fontWeight: 800, color: i === 0 ? 'var(--gsh-red)' : 'var(--text-subtle)', background: 'var(--bg-hover)', borderRadius: 'var(--radius-xs)' }}>
-                {d}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar Day Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.6rem' }}>
-            {calendarCells.map((cell, idx) => {
-              if (!cell) {
-                return <div key={`empty_${idx}`} style={{ minHeight: '95px', background: 'transparent' }}></div>;
-              }
-
-              const daySummary = calendarSummary[cell.dateStr];
-              const hasData = Boolean(daySummary && daySummary.row_count > 0);
-
-              return (
-                <div
-                  key={cell.dateStr}
-                  onClick={() => handleDateClick(cell.dateStr)}
-                  style={{
-                    minHeight: '105px',
-                    padding: '0.6rem',
-                    borderRadius: 'var(--radius-xs)',
-                    border: hasData ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
-                    background: hasData ? 'rgba(0,168,150,0.06)' : 'var(--bg-card)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justify: 'space-between',
-                    boxShadow: hasData ? '0 4px 12px rgba(0,168,150,0.12)' : 'none',
-                    transition: 'all 0.15s ease-in-out'
-                  }}
-                >
-                  {/* Day Number Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '1rem', fontWeight: 800, color: hasData ? 'var(--gsh-teal)' : 'var(--text-main)' }}>
-                      {cell.dayNum}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                      {hasData && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: 800, background: 'var(--gsh-teal)', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
-                          Uploaded
-                        </span>
-                      )}
-                      {/* Per-Day Sync Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleSyncDay(cell.dateStr, e)}
-                        disabled={syncingDay === cell.dateStr || syncing}
-                        title={`Sync ${cell.dateStr} from MS SQL Server (172.16.0.21)`}
-                        style={{
-                          background: syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)',
-                          border: '1px solid rgba(14, 165, 233, 0.3)',
-                          borderRadius: '4px',
-                          padding: '0.15rem 0.3rem',
-                          cursor: (syncingDay === cell.dateStr || syncing) ? 'not-allowed' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)',
-                          transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(14, 165, 233, 0.25)';
-                          e.currentTarget.style.color = '#0ea5e9';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)';
-                          e.currentTarget.style.color = syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)';
-                        }}
-                      >
-                        {syncingDay === cell.dateStr ? (
-                          <Loader style={{ width: '11px', height: '11px', animation: 'spin 1s linear infinite' }} />
-                        ) : (
-                          <RefreshCw style={{ width: '11px', height: '11px' }} />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Day Summary Highlights */}
-                  {hasData ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.35rem' }}>
-                      {/* 1. Sheet Total Value (Day 1 - Day N Cumulative LKR) */}
-                      <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Sheet Total:</span>
-                        <strong style={{ color: 'var(--text-main)', fontSize: '0.72rem' }}>LKR {fmt(daySummary.sheet_total_value ?? daySummary.total_value)}</strong>
-                      </div>
-
-                      {/* 2. Daily Total Value (This Day Only: Day N - Day N-1 LKR) */}
-                      <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.15rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span>Daily Total:</span>
-                        <strong style={{ color: 'var(--gsh-teal)' }}>LKR {fmt(daySummary.daily_value ?? daySummary.total_value)}</strong>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-subtle)', fontStyle: 'italic', marginTop: '0.5rem' }}>
-                      Click to Upload
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        /* ─── DATA TABLE VIEW WITH SEARCH & FILTERS ─── */
-        <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        /* ════════════════════════════════════════════════════════════════════════
+           1. CARD VIEW (CALENDAR GRID)
+           ════════════════════════════════════════════════════════════════════════ */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           
-          {/* Table Controls: Title, Search Bar & Status Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <TableIcon style={{ width: '20px', height: '20px', color: '#3b82f6' }} />
-                {monthLabel} {selectedYear} Daily Axienta Data Records Table
+          {/* Top Monthly Summary KPI Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+            <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(0,168,150,0.12)', color: 'var(--gsh-teal)' }}>
+                <Calendar style={{ width: '24px', height: '24px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>UPLOADED DAYS ({monthLabel.toUpperCase()} {selectedYear})</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>{totalUploadedDays} Days</div>
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                <Layers style={{ width: '24px', height: '24px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL AXIENTA ROWS</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)' }}>{monthTotalRows.toLocaleString()}</div>
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ padding: '0.75rem', borderRadius: 'var(--radius-xs)', background: 'rgba(200,16,46,0.12)', color: 'var(--gsh-red)' }}>
+                <DollarSign style={{ width: '24px', height: '24px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL MONTH AXIENTA VALUE (LKR)</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--gsh-red)' }}>{fmt(monthTotalValue)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Big Calendar Grid Card */}
+          <div className="glass-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Calendar Title Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                📅 {monthLabel} {selectedYear} Axienta Daily Upload Calendar Grid
               </h3>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Showing {filteredTableData.length} of {monthTableData.length} days ({totalUploadedDays} days uploaded)
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Click any day card to upload Excel sheet or inspect records
               </span>
             </div>
 
-            {/* Search and Status Filters */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-              
-              {/* Search Bar */}
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Search style={{ position: 'absolute', left: '0.65rem', width: '15px', height: '15px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            {/* Days of Week Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
+              {DAYS_OF_WEEK.map((d, i) => (
+                <div key={d} style={{ padding: '0.5rem', fontSize: '0.8rem', fontWeight: 800, color: i === 0 ? 'var(--gsh-red)' : 'var(--text-subtle)', background: 'var(--bg-hover)', borderRadius: 'var(--radius-xs)' }}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Calendar Day Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.6rem' }}>
+              {calendarCells.map((cell, idx) => {
+                if (!cell) {
+                  return <div key={`empty_${idx}`} style={{ minHeight: '95px', background: 'transparent' }}></div>;
+                }
+
+                const daySummary = calendarSummary[cell.dateStr];
+                const hasData = Boolean(daySummary && daySummary.row_count > 0);
+
+                return (
+                  <div
+                    key={cell.dateStr}
+                    onClick={() => handleDateClick(cell.dateStr)}
+                    style={{
+                      minHeight: '105px',
+                      padding: '0.6rem',
+                      borderRadius: 'var(--radius-xs)',
+                      border: hasData ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
+                      background: hasData ? 'rgba(0,168,150,0.06)' : 'var(--bg-card)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      boxShadow: hasData ? '0 4px 12px rgba(0,168,150,0.12)' : 'none',
+                      transition: 'all 0.15s ease-in-out'
+                    }}
+                  >
+                    {/* Day Number Header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '1rem', fontWeight: 800, color: hasData ? 'var(--gsh-teal)' : 'var(--text-main)' }}>
+                        {cell.dayNum}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        {hasData && (
+                          <span style={{ fontSize: '0.65rem', fontWeight: 800, background: 'var(--gsh-teal)', color: '#fff', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                            Uploaded
+                          </span>
+                        )}
+                        {/* Per-Day Sync Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleSyncDay(cell.dateStr, e)}
+                          disabled={syncingDay === cell.dateStr || syncing}
+                          title={`Sync ${cell.dateStr} from MS SQL Server (172.16.0.21)`}
+                          style={{
+                            background: syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)',
+                            border: '1px solid rgba(14, 165, 233, 0.3)',
+                            borderRadius: '4px',
+                            padding: '0.15rem 0.3rem',
+                            cursor: (syncingDay === cell.dateStr || syncing) ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(14, 165, 233, 0.25)';
+                            e.currentTarget.style.color = '#0ea5e9';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = syncingDay === cell.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(0,0,0,0.06)';
+                            e.currentTarget.style.color = syncingDay === cell.dateStr ? '#0ea5e9' : 'var(--text-muted)';
+                          }}
+                        >
+                          {syncingDay === cell.dateStr ? (
+                            <Loader style={{ width: '11px', height: '11px', animation: 'spin 1s linear infinite' }} />
+                          ) : (
+                            <RefreshCw style={{ width: '11px', height: '11px' }} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Day Summary Highlights */}
+                    {hasData ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.35rem' }}>
+                        {/* 1. Sheet Total Value (Day 1 - Day N Cumulative LKR) */}
+                        <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Sheet Total:</span>
+                          <strong style={{ color: 'var(--text-main)', fontSize: '0.72rem' }}>LKR {fmt(daySummary.sheet_total_value ?? daySummary.total_value)}</strong>
+                        </div>
+
+                        {/* 2. Daily Total Value (This Day Only: Day N - Day N-1 LKR) */}
+                        <div style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.12)', padding: '0.15rem 0.3rem', borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span>Daily Total:</span>
+                          <strong style={{ color: 'var(--gsh-teal)' }}>LKR {fmt(daySummary.daily_value ?? daySummary.total_value)}</strong>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-subtle)', fontStyle: 'italic', marginTop: '0.5rem' }}>
+                        Click to Upload
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ════════════════════════════════════════════════════════════════════════
+           2. PRODUCTS DATA TABLE VIEW (WITH FULL PRODUCT LEVEL DATA & FILTERS)
+           ════════════════════════════════════════════════════════════════════════ */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          
+          {/* Top Filter Bar for Products Table View */}
+          <div className="glass-card" style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Package style={{ width: '22px', height: '22px', color: '#3b82f6' }} />
+                  Axienta Products Data Table ({tableSelectedDate || `${monthLabel} ${selectedYear}`})
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>
+                  Filter by Year, Month, Specific Date, or Search for specific Product IDs & Names.
+                </p>
+              </div>
+
+              {/* Specific Date Filter Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-hover)', padding: '0.35rem 0.65rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                  <Calendar style={{ width: '15px', height: '15px', color: 'var(--gsh-teal)' }} />
+                  <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Specific Date:</label>
+                  <select
+                    value={tableSelectedDate}
+                    onChange={e => {
+                      setTableSelectedDate(e.target.value);
+                      setTablePage(1);
+                    }}
+                    style={{
+                      padding: '0.3rem 0.5rem',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="">All Dates in {monthLabel} {selectedYear}</option>
+                    {uploadedDatesList.map(dt => (
+                      <option key={dt} value={dt}>{dt} ({calendarSummary[dt]?.row_count || 0} rows)</option>
+                    ))}
+                  </select>
+
+                  {tableSelectedDate && (
+                    <button
+                      onClick={() => {
+                        setTableSelectedDate('');
+                        setTablePage(1);
+                      }}
+                      title="Clear Date Filter"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gsh-red)', padding: '2px', display: 'flex', alignItems: 'center' }}
+                    >
+                      <X style={{ width: '14px', height: '14px' }} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Custom Date Input for manual selection */}
                 <input
-                  type="text"
-                  placeholder="Search by date, day, status, value..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
+                  type="date"
+                  value={tableSelectedDate}
+                  onChange={e => {
+                    setTableSelectedDate(e.target.value);
+                    setTablePage(1);
+                  }}
                   style={{
-                    padding: '0.45rem 1.8rem 0.45rem 2rem',
+                    padding: '0.35rem 0.6rem',
                     borderRadius: 'var(--radius-xs)',
                     border: '1px solid var(--border-color)',
                     background: 'var(--bg-hover)',
                     color: 'var(--text-main)',
-                    fontSize: '0.825rem',
-                    width: '260px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
                     outline: 'none'
                   }}
                 />
-                {searchTerm && (
+              </div>
+            </div>
+
+            {/* Search Bar & Table Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+              
+              {/* Product SKU / Name Search Bar */}
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: '280px', maxWidth: '450px' }}>
+                <Search style={{ position: 'absolute', left: '0.75rem', width: '16px', height: '16px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                <input
+                  type="text"
+                  placeholder="Search Product ID (e.g. CFL102) or Product Name..."
+                  value={tableSearch}
+                  onChange={e => setTableSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 2rem 0.5rem 2.2rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: '1.5px solid var(--border-color)',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    outline: 'none',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                  }}
+                />
+                {tableSearch && (
                   <button
-                    onClick={() => setSearchTerm('')}
-                    style={{ position: 'absolute', right: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
+                    onClick={() => setTableSearch('')}
+                    style={{ position: 'absolute', right: '0.65rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}
                   >
-                    <X style={{ width: '13px', height: '13px' }} />
+                    <X style={{ width: '15px', height: '15px' }} />
                   </button>
                 )}
               </div>
 
-              {/* Status Filter Buttons */}
-              <div style={{ display: 'inline-flex', background: 'var(--bg-hover)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)', gap: '2px' }}>
-                <button
-                  onClick={() => setStatusFilter('all')}
+              {/* Rows Per Page Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Show:</span>
+                <select
+                  value={tableLimit}
+                  onChange={e => {
+                    setTableLimit(Number(e.target.value));
+                    setTablePage(1);
+                  }}
                   style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: statusFilter === 'all' ? 'var(--bg-card)' : 'transparent',
-                    color: statusFilter === 'all' ? 'var(--text-main)' : 'var(--text-muted)',
-                    fontWeight: statusFilter === 'all' ? 800 : 600,
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    boxShadow: statusFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none'
+                    padding: '0.4rem 0.6rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    outline: 'none'
                   }}
                 >
-                  All ({monthTableData.length})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('uploaded')}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: statusFilter === 'uploaded' ? 'var(--gsh-teal)' : 'transparent',
-                    color: statusFilter === 'uploaded' ? '#ffffff' : 'var(--text-muted)',
-                    fontWeight: statusFilter === 'uploaded' ? 800 : 600,
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    boxShadow: statusFilter === 'uploaded' ? '0 1px 3px rgba(0,168,150,0.3)' : 'none'
-                  }}
-                >
-                  Uploaded ({totalUploadedDays})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  style={{
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: statusFilter === 'pending' ? '#f59e0b' : 'transparent',
-                    color: statusFilter === 'pending' ? '#ffffff' : 'var(--text-muted)',
-                    fontWeight: statusFilter === 'pending' ? 800 : 600,
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    boxShadow: statusFilter === 'pending' ? '0 1px 3px rgba(245,158,11,0.3)' : 'none'
-                  }}
-                >
-                  Pending ({monthTableData.length - totalUploadedDays})
-                </button>
+                  <option value={25}>25 rows</option>
+                  <option value={50}>50 rows</option>
+                  <option value={100}>100 rows</option>
+                  <option value={200}>200 rows</option>
+                  <option value={500}>500 rows</option>
+                </select>
               </div>
 
             </div>
           </div>
 
-          {/* Interactive Data Table */}
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
-              <thead style={{ background: 'var(--bg-hover)', borderBottom: '1.5px solid var(--border-color)', fontWeight: 800, color: 'var(--text-main)' }}>
-                <tr>
-                  <th style={{ padding: '0.65rem 0.85rem', width: '50px', textAlign: 'center' }}>#</th>
-                  <th style={{ padding: '0.65rem 0.85rem' }}>Date</th>
-                  <th style={{ padding: '0.65rem 0.85rem' }}>Day</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center' }}>Upload Status</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>Axienta Rows</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>Daily Value (LKR)</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right' }}>Sheet Total (LKR)</th>
-                  <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center', width: '220px' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTableData.length === 0 ? (
+          {/* Table View Summary KPI Mini Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <div className="glass-card" style={{ padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ padding: '0.6rem', borderRadius: 'var(--radius-xs)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                <Hash style={{ width: '20px', height: '20px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL FILTERED RECORDS</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>{tableTotalCount.toLocaleString()}</div>
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ padding: '0.6rem', borderRadius: 'var(--radius-xs)', background: 'rgba(0,168,150,0.12)', color: 'var(--gsh-teal)' }}>
+                <Box style={{ width: '20px', height: '20px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL QUANTITY (UNITS)</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>{fmt(tableTotalQty)}</div>
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ padding: '0.6rem', borderRadius: 'var(--radius-xs)', background: 'rgba(200,16,46,0.12)', color: 'var(--gsh-red)' }}>
+                <DollarSign style={{ width: '20px', height: '20px' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)' }}>TOTAL SALES VALUE (LKR)</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--gsh-red)' }}>{fmt(tableTotalValue)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Products Data Table */}
+          <div className="glass-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
+                <thead style={{ background: 'var(--bg-hover)', borderBottom: '1.5px solid var(--border-color)', fontWeight: 800, color: 'var(--text-main)' }}>
                   <tr>
-                    <td colSpan="8" style={{ padding: '3rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      <Search style={{ width: '28px', height: '28px', margin: '0 auto 0.5rem auto', opacity: 0.5, display: 'block' }} />
-                      No daily records matching your search/filter criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTableData.map((row) => (
-                    <tr
-                      key={row.dateStr}
-                      onClick={() => handleDateClick(row.dateStr)}
-                      style={{
-                        borderBottom: '1px solid var(--border-color)',
-                        background: row.hasData ? 'rgba(0,168,150,0.02)' : 'transparent',
-                        cursor: 'pointer',
-                        transition: 'background 0.12s ease'
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = row.hasData ? 'rgba(0,168,150,0.02)' : 'transparent'; }}
+                    <th style={{ padding: '0.65rem 0.85rem', width: '55px', textAlign: 'center' }}>#</th>
+                    
+                    {/* Date Column */}
+                    <th 
+                      onClick={() => handleSort('entry_date')}
+                      style={{ padding: '0.65rem 0.85rem', width: '130px', cursor: 'pointer', userSelect: 'none' }}
                     >
-                      {/* # Day Number */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'center', fontWeight: 800, color: row.isSunday ? 'var(--gsh-red)' : 'var(--text-muted)' }}>
-                        {row.dayNum}
-                      </td>
-
-                      {/* Date */}
-                      <td style={{ padding: '0.55rem 0.85rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)' }}>
-                        {row.dateStr}
-                      </td>
-
-                      {/* Day of Week */}
-                      <td style={{ padding: '0.55rem 0.85rem', fontWeight: 600, color: row.isSunday ? 'var(--gsh-red)' : 'var(--text-subtle)' }}>
-                        {row.dayOfWeekFull}
-                      </td>
-
-                      {/* Status Badge */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'center' }}>
-                        {row.hasData ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            padding: '0.2rem 0.55rem',
-                            borderRadius: '12px',
-                            background: 'rgba(0,168,150,0.12)',
-                            color: 'var(--gsh-teal)',
-                            fontWeight: 800,
-                            fontSize: '0.725rem'
-                          }}>
-                            <CheckCircle style={{ width: '12px', height: '12px' }} />
-                            Uploaded
-                          </span>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>Date</span>
+                        {tableSortBy === 'entry_date' ? (
+                          tableSortOrder === 'asc' ? <ArrowUp style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> : <ArrowDown style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} />
                         ) : (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.3rem',
-                            padding: '0.2rem 0.55rem',
-                            borderRadius: '12px',
-                            background: 'rgba(100,116,139,0.1)',
-                            color: 'var(--text-muted)',
-                            fontWeight: 600,
-                            fontSize: '0.725rem'
-                          }}>
-                            <Clock style={{ width: '12px', height: '12px' }} />
-                            Pending
-                          </span>
+                          <ArrowUpDown style={{ width: '12px', height: '12px', opacity: 0.4 }} />
                         )}
-                      </td>
+                      </div>
+                    </th>
 
-                      {/* Row Count */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'right', fontWeight: 700, color: row.hasData ? 'var(--text-main)' : 'var(--text-muted)' }}>
-                        {row.hasData ? row.rowCount.toLocaleString() : '—'}
-                      </td>
+                    {/* Product ID Column */}
+                    <th 
+                      onClick={() => handleSort('product_id')}
+                      style={{ padding: '0.65rem 0.85rem', width: '150px', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>Product ID</span>
+                        {tableSortBy === 'product_id' ? (
+                          tableSortOrder === 'asc' ? <ArrowUp style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> : <ArrowDown style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} />
+                        ) : (
+                          <ArrowUpDown style={{ width: '12px', height: '12px', opacity: 0.4 }} />
+                        )}
+                      </div>
+                    </th>
 
-                      {/* Daily Total Value */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'right', fontWeight: 800, color: row.hasData ? 'var(--gsh-teal)' : 'var(--text-muted)' }}>
-                        {row.hasData ? `LKR ${fmt(row.dailyValue)}` : '—'}
-                      </td>
+                    {/* Product Name Column */}
+                    <th 
+                      onClick={() => handleSort('product')}
+                      style={{ padding: '0.65rem 0.85rem', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <span>Product Description</span>
+                        {tableSortBy === 'product' ? (
+                          tableSortOrder === 'asc' ? <ArrowUp style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> : <ArrowDown style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} />
+                        ) : (
+                          <ArrowUpDown style={{ width: '12px', height: '12px', opacity: 0.4 }} />
+                        )}
+                      </div>
+                    </th>
 
-                      {/* Sheet Total Value */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'right', fontWeight: 700, color: row.hasData ? 'var(--text-main)' : 'var(--text-muted)' }}>
-                        {row.hasData ? `LKR ${fmt(row.sheetTotalValue)}` : '—'}
-                      </td>
+                    {/* Quantity Column */}
+                    <th 
+                      onClick={() => handleSort('qty')}
+                      style={{ padding: '0.65rem 0.85rem', width: '110px', textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', gap: '0.35rem' }}>
+                        <span>Qty</span>
+                        {tableSortBy === 'qty' ? (
+                          tableSortOrder === 'asc' ? <ArrowUp style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> : <ArrowDown style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} />
+                        ) : (
+                          <ArrowUpDown style={{ width: '12px', height: '12px', opacity: 0.4 }} />
+                        )}
+                      </div>
+                    </th>
 
-                      {/* Action Buttons */}
-                      <td style={{ padding: '0.55rem 0.85rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleDateClick(row.dateStr)}
-                            title={`Inspect / Upload records for ${row.dateStr}`}
-                            style={{
-                              padding: '0.3rem 0.65rem',
-                              borderRadius: '4px',
-                              border: '1px solid var(--border-color)',
-                              background: row.hasData ? 'rgba(0,168,150,0.1)' : 'var(--bg-card)',
-                              color: row.hasData ? 'var(--gsh-teal)' : 'var(--text-main)',
-                              fontWeight: 700,
-                              fontSize: '0.75rem',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              transition: 'all 0.12s ease'
-                            }}
-                          >
-                            {row.hasData ? <Eye style={{ width: '12px', height: '12px' }} /> : <Upload style={{ width: '12px', height: '12px' }} />}
-                            {row.hasData ? 'View Records' : 'Upload File'}
-                          </button>
+                    {/* Value Column */}
+                    <th 
+                      onClick={() => handleSort('value')}
+                      style={{ padding: '0.65rem 0.85rem', width: '160px', textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', width: '100%', gap: '0.35rem' }}>
+                        <span>Value (LKR)</span>
+                        {tableSortBy === 'value' ? (
+                          tableSortOrder === 'asc' ? <ArrowUp style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> : <ArrowDown style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} />
+                        ) : (
+                          <ArrowUpDown style={{ width: '12px', height: '12px', opacity: 0.4 }} />
+                        )}
+                      </div>
+                    </th>
 
-                          <button
-                            type="button"
-                            onClick={(e) => handleSyncDay(row.dateStr, e)}
-                            disabled={syncingDay === row.dateStr || syncing}
-                            title={`Sync ${row.dateStr} from MS SQL Server (172.16.0.21)`}
-                            style={{
-                              padding: '0.3rem 0.55rem',
-                              borderRadius: '4px',
-                              border: '1px solid rgba(14, 165, 233, 0.3)',
-                              background: syncingDay === row.dateStr ? 'rgba(14, 165, 233, 0.2)' : 'rgba(14, 165, 233, 0.08)',
-                              color: '#0ea5e9',
-                              fontWeight: 700,
-                              fontSize: '0.75rem',
-                              cursor: (syncingDay === row.dateStr || syncing) ? 'not-allowed' : 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              transition: 'all 0.12s ease'
-                            }}
-                          >
-                            {syncingDay === row.dateStr ? (
-                              <Loader style={{ width: '12px', height: '12px', animation: 'spin 1s linear infinite' }} />
-                            ) : (
-                              <RefreshCw style={{ width: '12px', height: '12px' }} />
-                            )}
-                            Sync
-                          </button>
-                        </div>
+                    {/* Action Column */}
+                    <th style={{ padding: '0.65rem 0.85rem', width: '110px', textAlign: 'center' }}>Day Details</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {loadingTable ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <Loader style={{ width: '28px', height: '28px', margin: '0 auto 0.5rem auto', animation: 'spin 1s linear infinite', color: 'var(--gsh-teal)' }} />
+                        Loading Axienta product records...
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
+                  ) : tableRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '3.5rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <Package style={{ width: '32px', height: '32px', margin: '0 auto 0.5rem auto', opacity: 0.4, display: 'block' }} />
+                        No product records found matching the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    tableRecords.map((r, i) => {
+                      const rowIdx = (tablePage - 1) * tableLimit + i + 1;
+                      const isNegative = (r.value || 0) < 0;
 
-              {/* Table Footer Summary Totals */}
-              {filteredTableData.length > 0 && (
-                <tfoot style={{ background: 'var(--bg-hover)', borderTop: '2px solid var(--border-color)', fontWeight: 800 }}>
-                  <tr>
-                    <td colSpan="3" style={{ padding: '0.75rem 0.85rem', color: 'var(--text-main)', fontSize: '0.85rem' }}>
-                      MONTH TOTAL SUMMARY ({filteredTableData.filter(x => x.hasData).length} Uploaded Days)
-                    </td>
-                    <td style={{ padding: '0.75rem 0.85rem', textAlign: 'center', color: 'var(--gsh-teal)' }}>
-                      {((filteredTableData.filter(x => x.hasData).length / filteredTableData.length) * 100).toFixed(0)}% Complete
-                    </td>
-                    <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', color: 'var(--text-main)' }}>
-                      {filteredTableData.reduce((acc, c) => acc + c.rowCount, 0).toLocaleString()}
-                    </td>
-                    <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', color: 'var(--gsh-teal)', fontSize: '0.9rem' }}>
-                      LKR {fmt(filteredTableData.reduce((acc, c) => acc + c.dailyValue, 0))}
-                    </td>
-                    <td style={{ padding: '0.75rem 0.85rem', textAlign: 'right', color: 'var(--gsh-red)', fontSize: '0.9rem' }}>
-                      LKR {fmt(monthTotalValue)}
-                    </td>
-                    <td style={{ padding: '0.75rem 0.85rem' }}></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+                      return (
+                        <tr
+                          key={r.id || `${r.entry_date}_${r.product_id}_${i}`}
+                          style={{
+                            borderBottom: '1px solid var(--border-color)',
+                            transition: 'background 0.12s ease'
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          <td style={{ padding: '0.5rem 0.85rem', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 700 }}>
+                            {rowIdx}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {r.entry_date}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>
+                            {r.product_id || '—'}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                            {r.product}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-main)' }}>
+                            {fmt(r.qty)}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', textAlign: 'right', fontWeight: 800, color: isNegative ? '#ef4444' : '#10b981' }}>
+                            {fmt(r.value)}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.85rem', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleDateClick(r.entry_date)}
+                              title={`View all records for ${r.entry_date}`}
+                              style={{
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border-color)',
+                                background: 'rgba(0,168,150,0.08)',
+                                color: 'var(--gsh-teal)',
+                                fontWeight: 700,
+                                fontSize: '0.725rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem'
+                              }}
+                            >
+                              <Eye style={{ width: '12px', height: '12px' }} />
+                              Day View
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls Bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.5rem' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Showing page <strong>{tablePage}</strong> of <strong>{tableTotalPages}</strong> ({tableTotalCount.toLocaleString()} total items)
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <button
+                  type="button"
+                  disabled={tablePage <= 1 || loadingTable}
+                  onClick={() => setTablePage(1)}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: tablePage <= 1 ? 'transparent' : 'var(--bg-card)',
+                    color: tablePage <= 1 ? 'var(--text-subtle)' : 'var(--text-main)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: tablePage <= 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  First
+                </button>
+
+                <button
+                  type="button"
+                  disabled={tablePage <= 1 || loadingTable}
+                  onClick={() => setTablePage(p => Math.max(1, p - 1))}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: tablePage <= 1 ? 'transparent' : 'var(--bg-card)',
+                    color: tablePage <= 1 ? 'var(--text-subtle)' : 'var(--text-main)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: tablePage <= 1 ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}
+                >
+                  <ChevronLeft style={{ width: '14px', height: '14px' }} /> Prev
+                </button>
+
+                <span style={{ padding: '0.35rem 0.75rem', borderRadius: '4px', background: 'var(--gsh-teal)', color: '#fff', fontWeight: 800, fontSize: '0.78rem' }}>
+                  {tablePage} / {tableTotalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={tablePage >= tableTotalPages || loadingTable}
+                  onClick={() => setTablePage(p => Math.min(tableTotalPages, p + 1))}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: tablePage >= tableTotalPages ? 'transparent' : 'var(--bg-card)',
+                    color: tablePage >= tableTotalPages ? 'var(--text-subtle)' : 'var(--text-main)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: tablePage >= tableTotalPages ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem'
+                  }}
+                >
+                  Next <ChevronRight style={{ width: '14px', height: '14px' }} />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={tablePage >= tableTotalPages || loadingTable}
+                  onClick={() => setTablePage(tableTotalPages)}
+                  style={{
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: tablePage >= tableTotalPages ? 'transparent' : 'var(--bg-card)',
+                    color: tablePage >= tableTotalPages ? 'var(--text-subtle)' : 'var(--text-main)',
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    cursor: tablePage >= tableTotalPages ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+
           </div>
 
         </div>

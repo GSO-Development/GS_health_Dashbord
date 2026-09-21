@@ -257,6 +257,89 @@ def get_daily_records(
     }
 
 
+@router.get("/records")
+def get_axienta_records(
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    date: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=1000),
+    sort_by: str = Query("entry_date"),
+    sort_order: str = Query("desc")
+):
+    page_num = max(1, page)
+    limit_num = max(1, min(limit, 1000))
+    offset = (page_num - 1) * limit_num
+
+    where_clauses = []
+    params = []
+
+    if date and date.strip():
+        where_clauses.append("entry_date = %s")
+        params.append(date.strip())
+    elif start_date and end_date:
+        where_clauses.append("entry_date >= %s AND entry_date <= %s")
+        params.extend([start_date.strip(), end_date.strip()])
+    else:
+        if year is not None and year > 0:
+            where_clauses.append("YEAR(entry_date) = %s")
+            params.append(year)
+        if month is not None and month > 0:
+            where_clauses.append("MONTH(entry_date) = %s")
+            params.append(month)
+
+    if search and search.strip():
+        s = f"%{search.strip()}%"
+        where_clauses.append("(product_id LIKE %s OR product LIKE %s)")
+        params.extend([s, s])
+
+    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+    valid_sorts = {
+        "id": "id",
+        "entry_date": "entry_date",
+        "product_id": "product_id",
+        "product": "product",
+        "qty": "qty",
+        "value": "value"
+    }
+    col = valid_sorts.get(sort_by.lower(), "entry_date")
+    order = "ASC" if sort_order.lower() == "asc" else "DESC"
+    order_sql = f"ORDER BY {col} {order}, id {order}"
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            count_sql = f"SELECT COUNT(*) as cnt, COALESCE(SUM(qty), 0) as tot_qty, COALESCE(SUM(value), 0) as tot_val FROM axienta_data{where_sql};"
+            cursor.execute(count_sql, tuple(params))
+            agg = cursor.fetchone()
+            total_count = agg['cnt']
+            total_qty = round(float(agg['tot_qty']), 2)
+            total_value = round(float(agg['tot_val']), 2)
+
+            data_sql = f"SELECT id, DATE_FORMAT(entry_date, '%%Y-%%m-%%d') as entry_date, product_id, product, qty, value FROM axienta_data{where_sql} {order_sql} LIMIT %s OFFSET %s;"
+            cursor.execute(data_sql, tuple(params + [limit_num, offset]))
+            rows = cursor.fetchall()
+            for r in rows:
+                if r.get('entry_date'):
+                    r['entry_date'] = str(r['entry_date'])
+    finally:
+        conn.close()
+
+    return {
+        "total_count": total_count,
+        "total_qty": total_qty,
+        "total_value": total_value,
+        "page": page_num,
+        "limit": limit_num,
+        "total_pages": (total_count + limit_num - 1) // limit_num if limit_num else 1,
+        "rows": rows
+    }
+
+
 @router.post("/sync-data")
 def sync_axienta_mssql_data(payload: dict = Body(...)):
     """Sync whole month data from MS SQL Server (172.16.0.21 DB: GSH)."""
