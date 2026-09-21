@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown, Eye, EyeOff, CheckCircle2, Layers, Package } from 'lucide-react';
 import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
+import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -11,6 +12,7 @@ const DistriRangeFyPage = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
+  const [selectedContracts, setSelectedContracts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [treeData, setTreeData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(null);
@@ -35,6 +37,9 @@ const DistriRangeFyPage = () => {
           params.end_date = endDate;
         }
       }
+      if (selectedContracts.length > 0) {
+        params.contracts = selectedContracts.join(',');
+      }
 
       const res = await api.get('/reports/distri-range-fy', { params });
       if (res.data) {
@@ -49,7 +54,7 @@ const DistriRangeFyPage = () => {
 
   useEffect(() => {
     fetchDistriRangeData();
-  }, [selectedMonth, startDate, endDate, backlogMode]);
+  }, [selectedMonth, startDate, endDate, backlogMode, selectedContracts]);
 
   const toggleDivision = (divName) => {
     setExpandedDivisions(prev => ({
@@ -108,6 +113,15 @@ const DistriRangeFyPage = () => {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
             Click any Division or Subgroup row to expand child items. Live Primary & RD Target/Actual metrics.
           </p>
+        </div>
+
+        {/* Contract Multi-Select */}
+        <div>
+          <ContractMultiSelect
+            selectedContracts={selectedContracts}
+            onChange={setSelectedContracts}
+            disabled={loading}
+          />
         </div>
       </div>
 

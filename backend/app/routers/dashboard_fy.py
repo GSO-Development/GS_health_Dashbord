@@ -595,7 +595,8 @@ def get_distri_range_fy(
     date: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with")
+    backlog_mode: Optional[str] = Query("with"),
+    contracts: Optional[str] = Query(None)
 ):
     b_mode = (backlog_mode or "with").lower().strip()
     if b_mode not in ["with", "without", "only"]:
@@ -609,6 +610,18 @@ def get_distri_range_fy(
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
     has_date_filter = filter_start is not None
+
+    contract_list = []
+    if isinstance(contracts, str) and contracts.strip():
+        contract_list = [c.strip().upper() for c in contracts.split(",") if c.strip()]
+
+    if contract_list:
+        placeholders = ', '.join(['%s'] * len(contract_list))
+        c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
+        c_params = list(contract_list)
+    else:
+        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_params = []
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -679,64 +692,59 @@ def get_distri_range_fy(
 
         # 5. Primary actual from invoice_output
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
                     COALESCE(SUM(net_dom_amount), 0) as m_inv
                 FROM invoice_output
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
                 GROUP BY TRIM(catalog_no);
-            """, (filter_start, filter_end))
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
                     COALESCE(SUM(net_dom_amount), 0) as m_inv
                 FROM invoice_output
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
                 GROUP BY TRIM(catalog_no);
-            """, (month_num, year))
+            """, [month_num, year] + c_params)
         inv_m_map = {r['pid']: r['m_inv'] for r in cursor.fetchall()}
 
         # 6. Cumulative Primary actual from invoice_output
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT 
                 TRIM(catalog_no) as pid,
                 COALESCE(SUM(net_dom_amount), 0) as c_inv
             FROM invoice_output
             WHERE MONTH(invoice_date) <= %s AND YEAR(invoice_date) = %s
-              AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-              AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+              AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
             GROUP BY TRIM(catalog_no);
-        """, (month_num, year))
+        """, [month_num, year] + c_params)
         inv_c_map = {r['pid']: r['c_inv'] for r in cursor.fetchall()}
 
         # 7. Backlog from outstanding_output
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
                     COALESCE(SUM(backlog_value_base_curr), 0) as back
                 FROM outstanding_output
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
                 GROUP BY TRIM(catalog_no);
-            """, (filter_start, filter_end))
+            """, [filter_start, filter_end] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
                     COALESCE(SUM(backlog_value_base_curr), 0) as back
                 FROM outstanding_output
-                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI'
-                  AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
                 GROUP BY TRIM(catalog_no);
-            """)
+            """, c_params)
         back_map = {r['pid']: r['back'] for r in cursor.fetchall()}
 
         # 8. All distinct items from total_budget

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PieChart, RefreshCw, Calculator, ShieldCheck, Eye, EyeOff, Layers, Package, FileCheck } from 'lucide-react';
 import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
+import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
@@ -109,6 +110,7 @@ const DisDashboardFyPage = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
+  const [selectedContracts, setSelectedContracts] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -124,6 +126,9 @@ const DisDashboardFyPage = () => {
           params.end_date = endDate;
         }
       }
+      if (selectedContracts.length > 0) {
+        params.contracts = selectedContracts.join(',');
+      }
 
       const res = await api.get('/reports/dis-dashboard-fy-overview', { params });
       if (res.data) {
@@ -137,7 +142,7 @@ const DisDashboardFyPage = () => {
 
   useEffect(() => {
     fetchDisDashboardData();
-  }, [selectedMonth, startDate, endDate, backlogMode]);
+  }, [selectedMonth, startDate, endDate, backlogMode, selectedContracts]);
 
   const pri = data?.primary_sales || { actual: 783909774.55, target: 80800000, pct: 970, variance: 703109774.55 };
   const rd = data?.rd_sales || { actual: 22494390.46, target: 80800000, pct: 28, variance: -58305609.54 };
@@ -147,7 +152,7 @@ const DisDashboardFyPage = () => {
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       
-      {/* Header with Admin Formula Guide Toggle Button */}
+      {/* Header with Controls */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -165,31 +170,39 @@ const DisDashboardFyPage = () => {
           </p>
         </div>
 
-        {/* Admin-Only Formula Mode Toggle */}
-        {isAdmin && (
-          <button
-            onClick={() => setShowAdminFormulas(prev => !prev)}
-            style={{
-              padding: '0.45rem 0.85rem',
-              borderRadius: '6px',
-              border: showAdminFormulas ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
-              background: showAdminFormulas ? 'rgba(0,168,150,0.1)' : '#ffffff',
-              color: showAdminFormulas ? 'var(--gsh-teal)' : '#64748b',
-              fontWeight: 800,
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              boxShadow: showAdminFormulas ? '0 2px 8px rgba(0,168,150,0.15)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <ShieldCheck style={{ width: '15px', height: '15px', color: showAdminFormulas ? 'var(--gsh-teal)' : '#94a3b8' }} />
-            <span>Admin Formula Guide: <strong>{showAdminFormulas ? 'ON' : 'OFF'}</strong></span>
-            {showAdminFormulas ? <Eye style={{ width: '13px', height: '13px' }} /> : <EyeOff style={{ width: '13px', height: '13px' }} />}
-          </button>
-        )}
+        {/* Right Side Control Bar: Contract Multi-Select + Admin Formula Guide Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <ContractMultiSelect
+            selectedContracts={selectedContracts}
+            onChange={setSelectedContracts}
+            disabled={loading}
+          />
+
+          {isAdmin && (
+            <button
+              onClick={() => setShowAdminFormulas(prev => !prev)}
+              style={{
+                padding: '0.45rem 0.85rem',
+                borderRadius: '6px',
+                border: showAdminFormulas ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+                background: showAdminFormulas ? 'rgba(0,168,150,0.1)' : '#ffffff',
+                color: showAdminFormulas ? 'var(--gsh-teal)' : '#64748b',
+                fontWeight: 800,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                boxShadow: showAdminFormulas ? '0 2px 8px rgba(0,168,150,0.15)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <ShieldCheck style={{ width: '15px', height: '15px', color: showAdminFormulas ? 'var(--gsh-teal)' : '#94a3b8' }} />
+              <span>Admin Formula Guide: <strong>{showAdminFormulas ? 'ON' : 'OFF'}</strong></span>
+              {showAdminFormulas ? <Eye style={{ width: '13px', height: '13px' }} /> : <EyeOff style={{ width: '13px', height: '13px' }} />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ─── Backlog Calculation Mode Switcher (Visible to Admin & User) ─── */}

@@ -3,6 +3,7 @@ import { Info, Layers, RefreshCw, Search, CheckCircle, AlertCircle, ChevronRight
 import { useNavigate } from 'react-router-dom';
 import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
+import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -12,6 +13,7 @@ const TotalRangeFyPage = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
+  const [selectedContracts, setSelectedContracts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [reportData, setReportData] = useState([]);
   const [summaryTotals, setSummaryTotals] = useState(null);
@@ -46,6 +48,9 @@ const TotalRangeFyPage = () => {
           params.end_date = endDate;
         }
       }
+      if (selectedContracts.length > 0) {
+        params.contracts = selectedContracts.join(',');
+      }
 
       const res = await api.get('/reports/total-range-fy', { params });
       if (res.data) {
@@ -60,7 +65,7 @@ const TotalRangeFyPage = () => {
 
   useEffect(() => {
     loadRangeReport();
-  }, [selectedMonth, startDate, endDate, searchTerm, backlogMode]);
+  }, [selectedMonth, startDate, endDate, searchTerm, backlogMode, selectedContracts]);
 
   const toggleRowExpand = (divisionName) => {
     setExpandedRows(prev => {
@@ -107,6 +112,15 @@ const TotalRangeFyPage = () => {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
             Ranges created in Admin (A to Z) mapped with Monthly, Cumulative (Last 4M), and Annual Sales Updates (Values in LKR). Click Division Range for Sales Groups, click Sales Group for Product SKUs aligned with headers.
           </p>
+        </div>
+
+        {/* Contract Multi-Select Filter */}
+        <div>
+          <ContractMultiSelect
+            selectedContracts={selectedContracts}
+            onChange={setSelectedContracts}
+            disabled={loading}
+          />
         </div>
       </div>
 

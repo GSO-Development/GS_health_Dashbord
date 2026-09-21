@@ -173,7 +173,8 @@ def get_total_range_fy(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    backlog_mode: Optional[str] = Query("with")
+    backlog_mode: Optional[str] = Query("with"),
+    contracts: Optional[str] = Query(None)
 ):
     b_mode = (backlog_mode.lower().strip() if isinstance(backlog_mode, str) else "with")
     if b_mode not in ["with", "without", "only"]:
@@ -200,6 +201,21 @@ def get_total_range_fy(
     idx = FY_MONTH_ORDER.index(selected_month)
     cum_months = FY_MONTH_ORDER[:idx + 1]
     cum_m_nums = [MONTH_NUM_MAP[m] for m in cum_months]
+
+    # Handle Contracts Filter
+    contract_list = []
+    if isinstance(contracts, str) and contracts.strip():
+        contract_list = [c.strip().upper() for c in contracts.split(",") if c.strip()]
+
+    if contract_list:
+        placeholders = ', '.join(['%s'] * len(contract_list))
+        c_clause_i = f"AND UPPER(TRIM(i.contract)) IN ({placeholders})"
+        c_clause_o = f"AND UPPER(TRIM(o.contract)) IN ({placeholders})"
+        c_params = list(contract_list)
+    else:
+        c_clause_i = "AND (UPPER(TRIM(i.contract)) != 'GSTEA' OR i.contract IS NULL)"
+        c_clause_o = "AND (UPPER(TRIM(o.contract)) != 'GSTEA' OR o.contract IS NULL)"
+        c_params = []
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -268,7 +284,7 @@ def get_total_range_fy(
 
         # 3. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table joining division_mappings
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(i.catalog_group) as s_grp,
                     TRIM(i.catalog_no) as part_no,
@@ -277,11 +293,11 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 LEFT JOIN division_mappings m ON LOWER(TRIM(i.catalog_group)) = LOWER(TRIM(m.sales_group))
-                WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s
+                WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
                 GROUP BY s_grp, part_no, r_name, inv_m;
-            """, (s_date, e_date))
+            """, [s_date, e_date] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(i.catalog_group) as s_grp,
                     TRIM(i.catalog_no) as part_no,
@@ -290,8 +306,9 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 LEFT JOIN division_mappings m ON LOWER(TRIM(i.catalog_group)) = LOWER(TRIM(m.sales_group))
+                WHERE 1=1 {c_clause_i}
                 GROUP BY s_grp, part_no, r_name, inv_m;
-            """)
+            """, c_params)
         sg_inv_map = {}
         r_inv_map = {}
         p_inv_map = {}
@@ -316,7 +333,7 @@ def get_total_range_fy(
 
         # 4. Bulk fetch outstanding backlog
         if has_date_filter:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(o.catalog_group) as s_grp,
                     TRIM(o.catalog_no) as part_no,
@@ -324,11 +341,11 @@ def get_total_range_fy(
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
-                WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s
+                WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
                 GROUP BY s_grp, part_no, r_name;
-            """, (s_date, e_date))
+            """, [s_date, e_date] + c_params)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT 
                     TRIM(o.catalog_group) as s_grp,
                     TRIM(o.catalog_no) as part_no,
@@ -336,8 +353,9 @@ def get_total_range_fy(
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 LEFT JOIN division_mappings m ON LOWER(TRIM(o.catalog_group)) = LOWER(TRIM(m.sales_group))
+                WHERE 1=1 {c_clause_o}
                 GROUP BY s_grp, part_no, r_name;
-            """)
+            """, c_params)
         sg_back_map = {}
         r_back_map = {}
         p_back_map = {}
