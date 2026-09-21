@@ -118,7 +118,7 @@ def init_division_mappings_table():
                 sales_group VARCHAR(150) NOT NULL,
                 range_name VARCHAR(150) NOT NULL,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY uk_sales_group (sales_group, range_name)
+                UNIQUE KEY uk_sales_group_only (sales_group)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
 
