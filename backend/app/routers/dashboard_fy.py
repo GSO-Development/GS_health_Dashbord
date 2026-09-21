@@ -132,9 +132,13 @@ def get_dashboard_fy_overview(
         placeholders = ', '.join(['%s'] * len(contract_list))
         c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
         c_params = list(contract_list)
+        c_clause_dis = c_clause
+        c_params_dis = list(contract_list)
     else:
-        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_clause = "AND (UPPER(TRIM(contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS') OR contract IS NULL)"
         c_params = []
+        c_clause_dis = "AND (UPPER(TRIM(contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS', 'MIL', 'MTL') OR contract IS NULL)"
+        c_params_dis = []
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -187,15 +191,15 @@ def get_dashboard_fy_overview(
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
-            """, [filter_start, filter_end] + c_params)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause_dis};
+            """, [filter_start, filter_end] + c_params_dis)
         else:
             cursor.execute(f"""
                 SELECT COALESCE(SUM(net_dom_amount), 0) as dis_inv 
                 FROM invoice_output 
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s 
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
-            """, [month_num, year] + c_params)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause_dis};
+            """, [month_num, year] + c_params_dis)
         dis_pri_inv = float(cursor.fetchone()['dis_inv'] or 0.0)
 
         if has_date_filter:
@@ -203,14 +207,14 @@ def get_dashboard_fy_overview(
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
-            """, [filter_start, filter_end] + c_params)
+                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause_dis};
+            """, [filter_start, filter_end] + c_params_dis)
         else:
             cursor.execute(f"""
                 SELECT COALESCE(SUM(backlog_value_base_curr), 0) as dis_back 
                 FROM outstanding_output 
-                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause};
-            """, c_params)
+                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause_dis};
+            """, c_params_dis)
         dis_pri_back = float(cursor.fetchone()['dis_back'] or 0.0)
 
         if mode == "without":
@@ -387,7 +391,7 @@ def get_dis_dashboard_fy_overview(
         c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
         c_params = list(contract_list)
     else:
-        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_clause = "AND (UPPER(TRIM(contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS', 'MIL', 'MTL') OR contract IS NULL)"
         c_params = []
 
     conn = get_db_connection()
@@ -620,7 +624,7 @@ def get_distri_range_fy(
         c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
         c_params = list(contract_list)
     else:
-        c_clause = "AND (UPPER(TRIM(contract)) != 'GSTEA' OR contract IS NULL)"
+        c_clause = "AND (UPPER(TRIM(contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS', 'MIL', 'MTL') OR contract IS NULL)"
         c_params = []
 
     conn = get_db_connection()

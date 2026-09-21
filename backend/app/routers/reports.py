@@ -213,8 +213,8 @@ def get_total_range_fy(
         c_clause_o = f"AND UPPER(TRIM(o.contract)) IN ({placeholders})"
         c_params = list(contract_list)
     else:
-        c_clause_i = "AND (UPPER(TRIM(i.contract)) != 'GSTEA' OR i.contract IS NULL)"
-        c_clause_o = "AND (UPPER(TRIM(o.contract)) != 'GSTEA' OR o.contract IS NULL)"
+        c_clause_i = "AND (UPPER(TRIM(i.contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS') OR i.contract IS NULL)"
+        c_clause_o = "AND (UPPER(TRIM(o.contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS') OR o.contract IS NULL)"
         c_params = []
 
     conn = get_db_connection()
