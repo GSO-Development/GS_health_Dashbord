@@ -12,7 +12,7 @@ const TotalRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
-  const [backlogMode, setBacklogMode] = useState('with'); // 'with' | 'without' | 'only'
+  const [backlogMode, setBacklogMode] = useState('without'); // default 'without' (Without Backlog / Invoiced Only)
   const [selectedContracts, setSelectedContracts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [reportData, setReportData] = useState([]);
@@ -174,9 +174,9 @@ const TotalRangeFyPage = () => {
           <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
             Backlog Calculation Mode:
           </span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'with' ? '#10b981' : (backlogMode === 'without' ? '#6366f1' : '#f59e0b') }}>
-            {backlogMode === 'with' && '● Invoiced + Pending Backlog (Default)'}
-            {backlogMode === 'without' && '● Invoiced Sales Only (Excl. Backlog)'}
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
+            {backlogMode === 'with' && '● Invoiced + Pending Backlog'}
+            {backlogMode === 'without' && '● Invoiced Sales Only (Default)'}
             {backlogMode === 'only' && '● Pending Backlog Orders Only'}
           </span>
         </div>
@@ -201,8 +201,8 @@ const TotalRangeFyPage = () => {
               transition: 'all 0.15s ease'
             }}
           >
-            <CheckCircle2 style={{ width: '13px', height: '13px' }} />
-            With Backlog (Default)
+            <Layers style={{ width: '13px', height: '13px' }} />
+            With Backlog (Invoice + Backlog)
           </button>
 
           <button
@@ -224,8 +224,8 @@ const TotalRangeFyPage = () => {
               transition: 'all 0.15s ease'
             }}
           >
-            <Layers style={{ width: '13px', height: '13px' }} />
-            Without Backlog (Invoiced Only)
+            <CheckCircle2 style={{ width: '13px', height: '13px' }} />
+            Without Backlog (Default)
           </button>
 
           <button
