@@ -402,7 +402,8 @@ def get_total_range_fy(
             SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(description) as product_sku
             FROM invoice_output
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
         """)
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
@@ -427,7 +428,8 @@ def get_total_range_fy(
             SELECT DISTINCT TRIM(catalog_group) as s_grp, TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku
             FROM outstanding_output
             WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
-              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
         """)
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')

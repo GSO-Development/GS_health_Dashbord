@@ -117,7 +117,10 @@ def sync_oracle_invoices(oracle_user: str = None, oracle_password: str = None, y
                         price_adjustment, company, price_conv
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 """
-                cursor.executemany(inv_sql, inv_rows)
+                # Filter out any HET0 catalog rows
+                filtered_inv = [r for r in inv_rows if not (str(r[6] or '').strip().upper().startswith('HET0'))]
+                cursor.executemany(inv_sql, filtered_inv)
+                cursor.execute("DELETE FROM invoice_output WHERE TRIM(catalog_no) LIKE 'HET0%' OR catalog_no LIKE '%HET0%';")
             m_conn.close()
 
     except Exception as e:
@@ -214,9 +217,10 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
                         cust_grp, catalog_group, region_code, district_code, market_code,
                         country_code, salesman_code, authorize_code, price_list_no, priority,
                         line_item_no
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-                """
-                cursor.executemany(ord_sql, order_rows)
+                # Filter out any HET0 catalog rows
+                filtered_orders = [r for r in order_rows if not (str(r[7] or '').strip().upper().startswith('HET0'))]
+                cursor.executemany(ord_sql, filtered_orders)
+                cursor.execute("DELETE FROM outstanding_output WHERE TRIM(catalog_no) LIKE 'HET0%' OR catalog_no LIKE '%HET0%';")
             m_conn.close()
 
     except Exception as e:

@@ -768,7 +768,8 @@ def get_distri_range_fy(
         cursor.execute("""
             SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(description) as product_sku, TRIM(catalog_group) as sg
             FROM invoice_output
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
         """)
         inv_items = cursor.fetchall()
 
@@ -776,7 +777,8 @@ def get_distri_range_fy(
         cursor.execute("""
             SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku, TRIM(catalog_group) as sg
             FROM outstanding_output
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
+              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
         """)
         out_items = cursor.fetchall()
 
