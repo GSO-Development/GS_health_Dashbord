@@ -7,10 +7,12 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 
-const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const fmt = (v) => {
+  const n = Number(v);
+  return isNaN(n) ? '0.00' : n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+};
 
 const MONTHS_LIST = [
-  { num: 0, name: 'All Months (Full Year)' },
   { num: 1, name: 'January' },
   { num: 2, name: 'February' },
   { num: 3, name: 'March' },
@@ -25,14 +27,15 @@ const MONTHS_LIST = [
   { num: 12, name: 'December' },
 ];
 
-const YEARS_LIST = [2026, 2027, 2025, 2024];
+const currentYearVal = new Date().getFullYear();
+const currentMonthVal = new Date().getMonth() + 1;
+const YEARS_LIST = Array.from(new Set([currentYearVal, 2026, 2027, 2025, 2024])).sort((a, b) => b - a);
 
-const getCurrentMonthNum = () => new Date().getMonth() + 1; // 1 to 12
-const getCurrentYear = () => new Date().getFullYear();
+const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const UploadAxientaDataPage = () => {
-  const [selectedYear, setSelectedYear] = useState(getCurrentYear);
-  const [selectedMonthNum, setSelectedMonthNum] = useState(getCurrentMonthNum);
+  const [selectedYear, setSelectedYear] = useState(currentYearVal);
+  const [selectedMonthNum, setSelectedMonthNum] = useState(currentMonthVal);
   const [calendarSummary, setCalendarSummary] = useState({});
   const [loading, setLoading] = useState(true);
 
@@ -302,13 +305,13 @@ const UploadAxientaDataPage = () => {
   const monthLabel = MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name || 'July';
 
   // Month Total Value & Rows for Calendar KPIs
-  const totalUploadedDays = Object.keys(calendarSummary).length;
-  const monthTotalRows = Object.values(calendarSummary).reduce((acc, curr) => acc + (curr.row_count || 0), 0);
-  const monthTotalValue = Object.values(calendarSummary).reduce((acc, curr) => acc + (curr.total_value || 0), 0);
+  const totalUploadedDays = Object.keys(calendarSummary || {}).length;
+  const monthTotalRows = Object.values(calendarSummary || {}).reduce((acc, curr) => acc + (Number(curr?.row_count) || 0), 0);
+  const monthTotalValue = Object.values(calendarSummary || {}).reduce((acc, curr) => acc + (Number(curr?.total_value) || 0), 0);
 
   // Available uploaded dates list for quick dropdown filter
   const uploadedDatesList = useMemo(() => {
-    return Object.keys(calendarSummary).sort();
+    return Object.keys(calendarSummary || {}).sort();
   }, [calendarSummary]);
 
   const handleSort = (col) => {
