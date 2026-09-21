@@ -257,37 +257,31 @@ def get_total_range_fy(
                 range_to_sg[rn_clean].add(sg_clean)
                 sg_to_range[sg_clean.lower()] = rn_clean
 
-        # 3. Dynamic Discovery of any additional sales groups from invoice_output and outstanding_output
+        # 3. Bulk fetch individual product rows from total_budget with monthly budgets
         cursor.execute("""
-            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp 
-            FROM invoice_output 
-            WHERE LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
+            SELECT 
+                TRIM(sales_group) as s_grp,
+                TRIM(part_no) as part_no,
+                TRIM(product_sku) as product_sku,
+                SUM(april) as april, SUM(may) as may, SUM(june) as june, SUM(july) as july,
+                SUM(august) as august, SUM(september) as september, SUM(october) as october,
+                SUM(november) as november, SUM(december) as december, SUM(january) as january,
+                SUM(february) as february, SUM(march) as march, SUM(total) as total
+            FROM total_budget
+            WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
+            GROUP BY s_grp, part_no, product_sku;
         """)
+        sg_products_map = {}
+        seen_sg_prods = set()
         for r in cursor.fetchall():
-            sg_clean = r['s_grp'].strip()
-            sg_key = sg_clean.lower()
-            if sg_key not in sg_to_range:
-                # Assign to itself as division if not mapped anywhere
-                if sg_clean not in range_to_sg:
-                    range_to_sg[sg_clean] = set()
-                range_to_sg[sg_clean].add(sg_clean)
-                sg_to_range[sg_key] = sg_clean
-
-        cursor.execute("""
-            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp 
-            FROM outstanding_output 
-            WHERE LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
-        """)
-        for r in cursor.fetchall():
-            sg_clean = r['s_grp'].strip()
-            sg_key = sg_clean.lower()
-            if sg_key not in sg_to_range:
-                if sg_clean not in range_to_sg:
-                    range_to_sg[sg_clean] = set()
-                range_to_sg[sg_clean].add(sg_clean)
-                sg_to_range[sg_key] = sg_clean
-
-        all_ranges = sorted(list(range_to_sg.keys()))
+            s_grp = r.get('s_grp')
+            p_no = r.get('part_no')
+            if s_grp and p_no:
+                k = s_grp.strip().lower()
+                if k not in sg_products_map:
+                    sg_products_map[k] = []
+                sg_products_map[k].append(r)
+                seen_sg_prods.add((k, p_no.strip().lower()))
 
         # 4. Bulk fetch budgets grouped by sales_group from total_budget
         cursor.execute("""
@@ -314,6 +308,7 @@ def get_total_range_fy(
                 SELECT 
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
+                    MAX(TRIM(i.description)) as product_sku,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
@@ -326,6 +321,7 @@ def get_total_range_fy(
                 SELECT 
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
+                    MAX(TRIM(i.description)) as product_sku,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
@@ -346,13 +342,37 @@ def get_total_range_fy(
             inv_m = int(r.get('inv_m') or 0)
             act_val = float(r.get('total_act') or 0)
 
-            if s_grp and inv_m:
-                sk = (s_grp.strip().lower(), inv_m)
-                sg_inv_map[sk] = sg_inv_map.get(sk, 0.0) + act_val
+            if s_grp:
+                sg_clean = s_grp.strip()
+                sg_key = sg_clean.lower()
+                if sg_key not in sg_to_range:
+                    if sg_clean not in range_to_sg:
+                        range_to_sg[sg_clean] = set()
+                    range_to_sg[sg_clean].add(sg_clean)
+                    sg_to_range[sg_key] = sg_clean
 
-            if s_grp and part_no and inv_m:
-                pk = (s_grp.strip().lower(), part_no.strip().lower(), inv_m)
-                p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
+                if inv_m:
+                    sk = (sg_key, inv_m)
+                    sg_inv_map[sk] = sg_inv_map.get(sk, 0.0) + act_val
+
+                if part_no:
+                    pk_clean = part_no.strip()
+                    pk_key = pk_clean.lower()
+                    if (sg_key, pk_key) not in seen_sg_prods:
+                        seen_sg_prods.add((sg_key, pk_key))
+                        if sg_key not in sg_products_map:
+                            sg_products_map[sg_key] = []
+                        sg_products_map[sg_key].append({
+                            's_grp': sg_clean,
+                            'part_no': pk_clean,
+                            'product_sku': r.get('product_sku') or pk_clean,
+                            'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                            'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                        })
+
+                    if inv_m:
+                        pk = (sg_key, pk_key, inv_m)
+                        p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
 
         # 6. Bulk fetch outstanding backlog
         if has_date_filter:
@@ -360,6 +380,7 @@ def get_total_range_fy(
                 SELECT 
                     COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
+                    MAX(TRIM(o.catalog_desc)) as product_sku,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
@@ -371,6 +392,7 @@ def get_total_range_fy(
                 SELECT 
                     COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
+                    MAX(TRIM(o.catalog_desc)) as product_sku,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE 1=1 {c_clause_o}
@@ -389,87 +411,35 @@ def get_total_range_fy(
             back_val = float(r.get('total_back') or 0)
 
             if s_grp:
-                sk = s_grp.strip().lower()
-                sg_back_map[sk] = sg_back_map.get(sk, 0.0) + back_val
-            if s_grp and part_no:
-                pk = (s_grp.strip().lower(), part_no.strip().lower())
-                p_back_map[pk] = p_back_map.get(pk, 0.0) + back_val
+                sg_clean = s_grp.strip()
+                sg_key = sg_clean.lower()
+                if sg_key not in sg_to_range:
+                    if sg_clean not in range_to_sg:
+                        range_to_sg[sg_clean] = set()
+                    range_to_sg[sg_clean].add(sg_clean)
+                    sg_to_range[sg_key] = sg_clean
 
-        # 7. Bulk fetch individual product rows from total_budget with monthly budgets
-        cursor.execute("""
-            SELECT 
-                TRIM(sales_group) as s_grp,
-                TRIM(part_no) as part_no,
-                TRIM(product_sku) as product_sku,
-                SUM(april) as april, SUM(may) as may, SUM(june) as june, SUM(july) as july,
-                SUM(august) as august, SUM(september) as september, SUM(october) as october,
-                SUM(november) as november, SUM(december) as december, SUM(january) as january,
-                SUM(february) as february, SUM(march) as march, SUM(total) as total
-            FROM total_budget
-            WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
-            GROUP BY s_grp, part_no, product_sku;
-        """)
-        sg_products_map = {}
-        seen_sg_prods = set()
-        for r in cursor.fetchall():
-            s_grp = r.get('s_grp')
-            p_no = r.get('part_no')
-            if s_grp and p_no:
-                k = s_grp.strip().lower()
-                if k not in sg_products_map:
-                    sg_products_map[k] = []
-                sg_products_map[k].append(r)
-                seen_sg_prods.add((k, p_no.strip().lower()))
+                sg_back_map[sg_key] = sg_back_map.get(sg_key, 0.0) + back_val
 
-        # Also fetch distinct catalog items / subcodes from invoice_output
-        cursor.execute("""
-            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp, TRIM(catalog_no) as part_no, TRIM(description) as product_sku
-            FROM invoice_output
-            WHERE catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
-        """)
-        for r in cursor.fetchall():
-            s_grp = r.get('s_grp')
-            p_no = r.get('part_no')
-            if s_grp and p_no:
-                k = s_grp.strip().lower()
-                pk = p_no.strip().lower()
-                if (k, pk) not in seen_sg_prods:
-                    seen_sg_prods.add((k, pk))
-                    if k not in sg_products_map:
-                        sg_products_map[k] = []
-                    sg_products_map[k].append({
-                        's_grp': s_grp,
-                        'part_no': p_no,
-                        'product_sku': r.get('product_sku') or p_no,
-                        'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
-                        'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
-                    })
+                if part_no:
+                    pk_clean = part_no.strip()
+                    pk_key = pk_clean.lower()
+                    if (sg_key, pk_key) not in seen_sg_prods:
+                        seen_sg_prods.add((sg_key, pk_key))
+                        if sg_key not in sg_products_map:
+                            sg_products_map[sg_key] = []
+                        sg_products_map[sg_key].append({
+                            's_grp': sg_clean,
+                            'part_no': pk_clean,
+                            'product_sku': r.get('product_sku') or pk_clean,
+                            'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                            'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                        })
 
-        # Also fetch distinct catalog items / subcodes from outstanding_output
-        cursor.execute("""
-            SELECT DISTINCT COALESCE(NULLIF(TRIM(catalog_group), ''), 'OTHER') as s_grp, TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku
-            FROM outstanding_output
-            WHERE catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND LEFT(UPPER(TRIM(catalog_no)), 4) != 'HET0';
-        """)
-        for r in cursor.fetchall():
-            s_grp = r.get('s_grp')
-            p_no = r.get('part_no')
-            if s_grp and p_no:
-                k = s_grp.strip().lower()
-                pk = p_no.strip().lower()
-                if (k, pk) not in seen_sg_prods:
-                    seen_sg_prods.add((k, pk))
-                    if k not in sg_products_map:
-                        sg_products_map[k] = []
-                    sg_products_map[k].append({
-                        's_grp': s_grp,
-                        'part_no': p_no,
-                        'product_sku': r.get('product_sku') or p_no,
-                        'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
-                        'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
-                    })
+                    pk = (sg_key, pk_key)
+                    p_back_map[pk] = p_back_map.get(pk, 0.0) + back_val
+
+        all_ranges = sorted(list(range_to_sg.keys()))
 
     conn.close()
 
