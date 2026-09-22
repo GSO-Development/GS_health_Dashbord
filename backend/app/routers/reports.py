@@ -243,8 +243,10 @@ def get_total_range_fy(
         """)
         for r in cursor.fetchall():
             if r.get('pno'):
-                pk = r['pno'].strip().lower()
-                part_to_range[pk] = (r['rn'].strip(), r['sg'].strip())
+                pk = str(r['pno']).strip().lower()
+                rn_val = str(r.get('rn') or '').strip()
+                sg_val = str(r.get('sg') or '').strip()
+                part_to_range[pk] = (rn_val, sg_val)
 
         # 3. Fetch Sales Group → Range Mappings from division_mappings
         cursor.execute("""
