@@ -45,15 +45,15 @@ def _require_env(key: str) -> str:
 AZURE_CLIENT_ID     = _require_env("AZURE_CLIENT_ID")
 AZURE_CLIENT_SECRET = _require_env("AZURE_CLIENT_SECRET")
 AZURE_TENANT_ID     = _require_env("AZURE_TENANT_ID")
-AZURE_REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI", "http://172.16.7.41/api/auth/microsoft/callback")
-FRONTEND_URL        = os.getenv("FRONTEND_URL", "http://172.16.7.41")
+AZURE_REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI", "http://gsh-sd.georgesteuart.lk/api/auth/microsoft/callback")
+FRONTEND_URL        = os.getenv("FRONTEND_URL", "http://gsh-sd.georgesteuart.lk")
 
 # FIX-7: Whitelist of allowed OAuth redirect URIs
 ALLOWED_REDIRECT_URIS = {
     uri.strip()
     for uri in os.getenv(
         "ALLOWED_REDIRECT_URIS",
-        f"http://172.16.7.41/api/auth/microsoft/callback,http://localhost:8000/api/auth/microsoft/callback"
+        "http://gsh-sd.georgesteuart.lk/api/auth/microsoft/callback,https://gsh-sd.georgesteuart.lk/api/auth/microsoft/callback,http://172.16.7.10/api/auth/microsoft/callback,https://172.16.7.10/api/auth/microsoft/callback,http://localhost:8000/api/auth/microsoft/callback,http://localhost:5173/api/auth/microsoft/callback"
     ).split(",")
     if uri.strip()
 }

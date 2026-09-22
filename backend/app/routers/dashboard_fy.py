@@ -732,8 +732,20 @@ def get_distri_range_fy(
         tb_items = cursor.fetchall()
 
         # Division mappings for sales_group -> range_name
-        cursor.execute("SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL;")
+        cursor.execute("SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL AND range_name != 'Range';")
         sg_to_range = {r['sg'].strip().lower(): r['rn'].strip() for r in cursor.fetchall() if r.get('sg')}
+
+        # Official distinct Division / Range names
+        cursor.execute("""
+            SELECT DISTINCT TRIM(range_name) as rn 
+            FROM division_mappings 
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+            UNION
+            SELECT DISTINCT TRIM(range_name) as rn
+            FROM total_budget
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+        """)
+        official_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
 
         # Distinct catalog items from invoice_output for DISTRI
         cursor.execute("""
@@ -763,8 +775,8 @@ def get_distri_range_fy(
         for r in tb_items:
             if r.get('part_no'):
                 pno = r['part_no'].strip()
-                div_name = r['division_name'] or 'Other'
-                sub_name = r['subgroup_name'] or 'Other'
+                div_name = r['division_name'] or 'SPECIALITY CARE'
+                sub_name = r['subgroup_name'] or 'General'
                 psku = r['product_sku'] or pno
                 all_merged_items[(div_name, sub_name, pno)] = psku
 
@@ -774,14 +786,17 @@ def get_distri_range_fy(
             if not pno:
                 continue
             sg = (r.get('sg') or '').strip()
-            if pno.lower() in part_to_div:
-                div_name, sub_name, _ = part_to_div[pno.lower()]
-            elif sg.lower() in sg_to_range:
+            if sg.lower() in sg_to_range:
                 div_name = sg_to_range[sg.lower()]
                 sub_name = sg
+            elif pno.lower() in part_to_div:
+                div_name, sub_name, _ = part_to_div[pno.lower()]
+            elif sg in official_ranges:
+                div_name = sg
+                sub_name = sg
             else:
-                div_name = sg or 'Other'
-                sub_name = sg or 'Other'
+                div_name = 'SPECIALITY CARE'
+                sub_name = sg or 'General'
             sku = (r.get('product_sku') or '').strip() or pno
             key = (div_name, sub_name, pno)
             if key not in all_merged_items:
@@ -793,14 +808,17 @@ def get_distri_range_fy(
             if not pno:
                 continue
             sg = (r.get('sg') or '').strip()
-            if pno.lower() in part_to_div:
-                div_name, sub_name, _ = part_to_div[pno.lower()]
-            elif sg.lower() in sg_to_range:
+            if sg.lower() in sg_to_range:
                 div_name = sg_to_range[sg.lower()]
                 sub_name = sg
+            elif pno.lower() in part_to_div:
+                div_name, sub_name, _ = part_to_div[pno.lower()]
+            elif sg in official_ranges:
+                div_name = sg
+                sub_name = sg
             else:
-                div_name = sg or 'Other'
-                sub_name = sg or 'Other'
+                div_name = 'SPECIALITY CARE'
+                sub_name = sg or 'General'
             sku = (r.get('product_sku') or '').strip() or pno
             key = (div_name, sub_name, pno)
             if key not in all_merged_items:
@@ -812,8 +830,8 @@ def get_distri_range_fy(
                 return round((act / tgt) * 100, 1)
             return 0.0
 
-        # Build hierarchy tree
-        divisions = {}
+        # Build hierarchy tree for all official divisions
+        divisions = {rn: {} for rn in official_ranges}
         for (div_name, sub_name, pno), psku in sorted(all_merged_items.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
             b_info = dis_budget_map.get(pno, {})
             b_c_info = dis_budget_c_map.get(pno, {})

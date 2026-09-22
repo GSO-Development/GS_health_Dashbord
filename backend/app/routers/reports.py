@@ -219,29 +219,50 @@ def get_total_range_fy(
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        # 1. Fetch Sales Group → Range Mappings from division_mappings table
+        # 1. Fetch official distinct Range Names from division_mappings and total_budget
+        cursor.execute("""
+            SELECT DISTINCT TRIM(range_name) as rn 
+            FROM division_mappings 
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+            UNION
+            SELECT DISTINCT TRIM(range_name) as rn
+            FROM total_budget
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+        """)
+        all_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
+        
+        range_to_sg = {rn: set() for rn in all_ranges}
+        sg_to_range = {}
+        part_to_range = {}
+
+        # 2. Fetch Part -> (Range, Sales Group) from total_budget
+        cursor.execute("""
+            SELECT TRIM(part_no) as pno, TRIM(range_name) as rn, TRIM(sales_group) as sg
+            FROM total_budget
+            WHERE part_no IS NOT NULL AND TRIM(part_no) != '';
+        """)
+        for r in cursor.fetchall():
+            if r.get('pno'):
+                pk = r['pno'].strip().lower()
+                part_to_range[pk] = (r['rn'].strip(), r['sg'].strip())
+
+        # 3. Fetch Sales Group → Range Mappings from division_mappings
         cursor.execute("""
             SELECT TRIM(sales_group) as s_grp, TRIM(range_name) as r_name 
             FROM division_mappings 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '';
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
         """)
-        div_mappings_rows = cursor.fetchall()
-        
-        range_to_sg = {}
-        sg_to_range = {}
-        for r in div_mappings_rows:
+        for r in cursor.fetchall():
             sg = r.get('s_grp')
             rn = r.get('r_name')
-            if rn:
+            if rn and sg:
                 rn_clean = rn.strip()
-                if rn_clean not in range_to_sg:
-                    range_to_sg[rn_clean] = set()
-                if sg:
-                    sg_clean = sg.strip()
+                sg_clean = sg.strip()
+                if rn_clean in range_to_sg:
                     range_to_sg[rn_clean].add(sg_clean)
-                    sg_to_range[sg_clean.lower()] = rn_clean
+                sg_to_range[sg_clean.lower()] = rn_clean
 
-        # 2. Fetch distinct range_name and sales_group from total_budget
+        # 4. Fetch distinct range_name and sales_group from total_budget
         cursor.execute("""
             SELECT DISTINCT TRIM(range_name) as r_name, TRIM(sales_group) as s_grp 
             FROM total_budget 
@@ -251,13 +272,12 @@ def get_total_range_fy(
         for r in cursor.fetchall():
             rn_clean = r['r_name'].strip()
             sg_clean = r['s_grp'].strip()
-            if sg_clean.lower() not in sg_to_range:
-                if rn_clean not in range_to_sg:
-                    range_to_sg[rn_clean] = set()
+            if rn_clean in range_to_sg:
                 range_to_sg[rn_clean].add(sg_clean)
+            if sg_clean.lower() not in sg_to_range:
                 sg_to_range[sg_clean.lower()] = rn_clean
 
-        # 3. Bulk fetch individual product rows from total_budget with monthly budgets
+        # 5. Bulk fetch individual product rows from total_budget with monthly budgets
         cursor.execute("""
             SELECT 
                 TRIM(sales_group) as s_grp,
@@ -283,7 +303,7 @@ def get_total_range_fy(
                 sg_products_map[k].append(r)
                 seen_sg_prods.add((k, p_no.strip().lower()))
 
-        # 4. Bulk fetch budgets grouped by sales_group from total_budget
+        # 6. Bulk fetch budgets grouped by sales_group from total_budget
         cursor.execute("""
             SELECT 
                 TRIM(b.sales_group) as s_grp,
@@ -302,7 +322,7 @@ def get_total_range_fy(
                 sg_key = s_grp.strip().lower()
                 sg_b_map[sg_key] = r
 
-        # 5. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
+        # 7. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
@@ -345,19 +365,28 @@ def get_total_range_fy(
             if s_grp:
                 sg_clean = s_grp.strip()
                 sg_key = sg_clean.lower()
-                if sg_key not in sg_to_range:
-                    if sg_clean not in range_to_sg:
-                        range_to_sg[sg_clean] = set()
-                    range_to_sg[sg_clean].add(sg_clean)
-                    sg_to_range[sg_key] = sg_clean
+                pk_clean = part_no.strip() if part_no else ""
+                pk_key = pk_clean.lower()
+
+                target_range = None
+                if sg_key in sg_to_range:
+                    target_range = sg_to_range[sg_key]
+                elif pk_key in part_to_range:
+                    target_range = part_to_range[pk_key][0]
+                    sg_clean = part_to_range[pk_key][1]
+                    sg_key = sg_clean.lower()
+                elif sg_clean in range_to_sg:
+                    target_range = sg_clean
+
+                if target_range and target_range in range_to_sg:
+                    range_to_sg[target_range].add(sg_clean)
+                    sg_to_range[sg_key] = target_range
 
                 if inv_m:
                     sk = (sg_key, inv_m)
                     sg_inv_map[sk] = sg_inv_map.get(sk, 0.0) + act_val
 
                 if part_no:
-                    pk_clean = part_no.strip()
-                    pk_key = pk_clean.lower()
                     if (sg_key, pk_key) not in seen_sg_prods:
                         seen_sg_prods.add((sg_key, pk_key))
                         if sg_key not in sg_products_map:
@@ -374,7 +403,7 @@ def get_total_range_fy(
                         pk = (sg_key, pk_key, inv_m)
                         p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
 
-        # 6. Bulk fetch outstanding backlog
+        # 8. Bulk fetch outstanding backlog
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
@@ -413,17 +442,26 @@ def get_total_range_fy(
             if s_grp:
                 sg_clean = s_grp.strip()
                 sg_key = sg_clean.lower()
-                if sg_key not in sg_to_range:
-                    if sg_clean not in range_to_sg:
-                        range_to_sg[sg_clean] = set()
-                    range_to_sg[sg_clean].add(sg_clean)
-                    sg_to_range[sg_key] = sg_clean
+                pk_clean = part_no.strip() if part_no else ""
+                pk_key = pk_clean.lower()
+
+                target_range = None
+                if sg_key in sg_to_range:
+                    target_range = sg_to_range[sg_key]
+                elif pk_key in part_to_range:
+                    target_range = part_to_range[pk_key][0]
+                    sg_clean = part_to_range[pk_key][1]
+                    sg_key = sg_clean.lower()
+                elif sg_clean in range_to_sg:
+                    target_range = sg_clean
+
+                if target_range and target_range in range_to_sg:
+                    range_to_sg[target_range].add(sg_clean)
+                    sg_to_range[sg_key] = target_range
 
                 sg_back_map[sg_key] = sg_back_map.get(sg_key, 0.0) + back_val
 
                 if part_no:
-                    pk_clean = part_no.strip()
-                    pk_key = pk_clean.lower()
                     if (sg_key, pk_key) not in seen_sg_prods:
                         seen_sg_prods.add((sg_key, pk_key))
                         if sg_key not in sg_products_map:
@@ -438,8 +476,6 @@ def get_total_range_fy(
 
                     pk = (sg_key, pk_key)
                     p_back_map[pk] = p_back_map.get(pk, 0.0) + back_val
-
-        all_ranges = sorted(list(range_to_sg.keys()))
 
     conn.close()
 
