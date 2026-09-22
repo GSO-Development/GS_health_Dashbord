@@ -20,6 +20,21 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
+// Response interceptor to handle 401 unauthorized session expiration
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Check if session token expired
+      const detail = error.response.data?.detail || '';
+      if (typeof detail === 'string' && (detail.toLowerCase().includes('expired') || detail.toLowerCase().includes('legacy') || detail.toLowerCase().includes('invalid'))) {
+        console.warn('Authentication token expired or invalid:', detail);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Check database and backend server health
 export const checkDatabaseHealth = async () => {
   try {
