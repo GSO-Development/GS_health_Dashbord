@@ -330,6 +330,7 @@ const InvoiceSyncPage = () => {
                 <th style={{ padding: '0.75rem 1rem' }}>Contract</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Invoice Date</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Customer Name</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Catalog Group</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Catalog / SKU</th>
                 <th style={{ padding: '0.75rem 1rem' }}>Description</th>
                 <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Invoiced Qty</th>
@@ -341,14 +342,14 @@ const InvoiceSyncPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <RefreshCw className="animate-spin" style={{ width: '24px', height: '24px', margin: '0 auto 0.5rem auto', color: 'var(--gsh-red)' }} />
                     <div>Loading filtered invoice records...</div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
                 <tr>
-                  <td colSpan="10" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="11" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: 'var(--text-muted)' }}>
                     <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.4rem' }}>
                       No invoice records found for {selectedMonthNum > 0 ? MONTHS_LIST.find(m => m.num === selectedMonthNum)?.name : ''} {selectedYear || ''}
                     </div>
@@ -380,6 +381,11 @@ const InvoiceSyncPage = () => {
                     </td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-main)' }}>
                       {row.delivery_customer_name || row.delivery_customer || '-'}
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <span style={{ padding: '0.2rem 0.5rem', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderRadius: '4px', fontWeight: 700, fontSize: '0.75rem' }}>
+                        {row.catalog_group || '-'}
+                      </span>
                     </td>
                     <td style={{ padding: '0.75rem 1rem' }}>
                       <span style={{ padding: '0.2rem 0.5rem', background: 'var(--bg-hover)', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.75rem' }}>

@@ -25,9 +25,9 @@ def get_invoice_output(
     params = []
 
     if search:
-        where_clauses.append("(invoice_no LIKE %s OR order_no LIKE %s OR delivery_customer_name LIKE %s OR catalog_no LIKE %s OR description LIKE %s)")
+        where_clauses.append("(invoice_no LIKE %s OR order_no LIKE %s OR delivery_customer_name LIKE %s OR catalog_no LIKE %s OR description LIKE %s OR catalog_group LIKE %s)")
         s = f"%{search}%"
-        params.extend([s, s, s, s, s])
+        params.extend([s, s, s, s, s, s])
 
     if year:
         where_clauses.append("YEAR(invoice_date) = %s")
