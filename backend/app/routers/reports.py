@@ -248,21 +248,31 @@ def get_total_range_fy(
                 sg_val = str(r.get('sg') or '').strip()
                 part_to_range[pk] = (rn_val, sg_val)
 
-        # 3. Fetch Sales Group → Range Mappings from division_mappings
+        # 3. Fetch Sales Group → Range Mappings from division_mappings (including match_type and contract_code)
+        contract_to_range = {}
+        contract_to_sg = {}
         cursor.execute("""
-            SELECT TRIM(sales_group) as s_grp, TRIM(range_name) as r_name 
+            SELECT TRIM(sales_group) as s_grp, TRIM(range_name) as r_name,
+                   UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
+                   UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
             FROM division_mappings 
             WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
         """)
         for r in cursor.fetchall():
             sg = r.get('s_grp')
             rn = r.get('r_name')
+            m_type = r.get('m_type')
+            c_code = r.get('c_code')
             if rn and sg:
                 rn_clean = rn.strip()
                 sg_clean = sg.strip()
                 if rn_clean in range_to_sg:
                     range_to_sg[rn_clean].add(sg_clean)
                 sg_to_range[sg_clean.lower()] = rn_clean
+
+                if m_type == 'CONTRACT' and c_code:
+                    contract_to_range[c_code.lower()] = rn_clean
+                    contract_to_sg[c_code.lower()] = sg_clean
 
         # 4. Fetch distinct range_name and sales_group from total_budget
         cursor.execute("""
@@ -331,12 +341,12 @@ def get_total_range_fy(
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MAX(TRIM(i.description)) as product_sku,
+                    UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
-                  AND LEFT(UPPER(TRIM(i.catalog_no)), 4) != 'HET0'
-                GROUP BY s_grp, part_no, inv_m;
+                GROUP BY s_grp, part_no, contract_code, inv_m;
             """, [s_date, e_date] + c_params)
         else:
             inv_query = f"""
@@ -344,12 +354,12 @@ def get_total_range_fy(
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MAX(TRIM(i.description)) as product_sku,
+                    UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 WHERE 1=1 {c_clause_i}
-                  AND LEFT(UPPER(TRIM(i.catalog_no)), 4) != 'HET0'
-                GROUP BY s_grp, part_no, inv_m;
+                GROUP BY s_grp, part_no, contract_code, inv_m;
             """
             if c_params:
                 cursor.execute(inv_query, c_params)
@@ -363,6 +373,7 @@ def get_total_range_fy(
             part_no = r.get('part_no')
             inv_m = int(r.get('inv_m') or 0)
             act_val = float(r.get('total_act') or 0)
+            c_code_val = str(r.get('contract_code') or '').strip().lower()
 
             if s_grp:
                 sg_clean = s_grp.strip()
@@ -371,7 +382,11 @@ def get_total_range_fy(
                 pk_key = pk_clean.lower()
 
                 target_range = None
-                if sg_key in sg_to_range:
+                if c_code_val and c_code_val in contract_to_range:
+                    target_range = contract_to_range[c_code_val]
+                    sg_clean = contract_to_sg.get(c_code_val, sg_clean)
+                    sg_key = sg_clean.lower()
+                elif sg_key in sg_to_range:
                     target_range = sg_to_range[sg_key]
                 elif pk_key in part_to_range:
                     target_range = part_to_range[pk_key][0]
@@ -412,11 +427,11 @@ def get_total_range_fy(
                     COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
                     MAX(TRIM(o.catalog_desc)) as product_sku,
+                    UPPER(TRIM(COALESCE(o.contract, ''))) as contract_code,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
-                  AND LEFT(UPPER(TRIM(o.catalog_no)), 4) != 'HET0'
-                GROUP BY s_grp, part_no;
+                GROUP BY s_grp, part_no, contract_code;
             """, [s_date, e_date] + c_params)
         else:
             out_query = f"""
@@ -424,11 +439,11 @@ def get_total_range_fy(
                     COALESCE(NULLIF(TRIM(o.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(o.catalog_no) as part_no,
                     MAX(TRIM(o.catalog_desc)) as product_sku,
+                    UPPER(TRIM(COALESCE(o.contract, ''))) as contract_code,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE 1=1 {c_clause_o}
-                  AND LEFT(UPPER(TRIM(o.catalog_no)), 4) != 'HET0'
-                GROUP BY s_grp, part_no;
+                GROUP BY s_grp, part_no, contract_code;
             """
             if c_params:
                 cursor.execute(out_query, c_params)
@@ -440,6 +455,7 @@ def get_total_range_fy(
             s_grp = r.get('s_grp')
             part_no = r.get('part_no')
             back_val = float(r.get('total_back') or 0)
+            c_code_val = str(r.get('contract_code') or '').strip().lower()
 
             if s_grp:
                 sg_clean = s_grp.strip()
@@ -448,7 +464,11 @@ def get_total_range_fy(
                 pk_key = pk_clean.lower()
 
                 target_range = None
-                if sg_key in sg_to_range:
+                if c_code_val and c_code_val in contract_to_range:
+                    target_range = contract_to_range[c_code_val]
+                    sg_clean = contract_to_sg.get(c_code_val, sg_clean)
+                    sg_key = sg_clean.lower()
+                elif sg_key in sg_to_range:
                     target_range = sg_to_range[sg_key]
                 elif pk_key in part_to_range:
                     target_range = part_to_range[pk_key][0]

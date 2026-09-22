@@ -2,7 +2,7 @@ import io
 import re
 from typing import Optional
 from datetime import datetime, date
-from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Depends
+from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Depends, Body
 import pandas as pd
 from app.core.database import get_db_connection
 from app.core.security import require_admin
@@ -69,6 +69,74 @@ def get_total_budget(
         "limit": limit_num,
         "total_pages": (total_count + limit_num - 1) // limit_num if limit_num else 1,
         "rows": rows
+    }
+
+
+@router.put("/total-budget/{item_id}", dependencies=[Depends(require_admin)])
+def update_total_budget_item(item_id: int, payload: dict = Body(...)):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM total_budget WHERE id = %s;", (item_id,))
+            existing = cursor.fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"Total budget item with ID {item_id} not found.")
+
+            range_name = str(payload.get('range_name') if 'range_name' in payload else existing.get('range_name') or '').strip()
+            sales_group = str(payload.get('sales_group') if 'sales_group' in payload else existing.get('sales_group') or '').strip()
+            part_no = str(payload.get('part_no') if 'part_no' in payload else existing.get('part_no') or '').strip()
+            product_sku = str(payload.get('product_sku') if 'product_sku' in payload else existing.get('product_sku') or '').strip()
+            cost_center = str(payload.get('cost_center') if 'cost_center' in payload else existing.get('cost_center') or '').strip()
+
+            month_vals = {}
+            for m in MONTH_NAMES:
+                val = payload.get(m)
+                if val is not None and str(val).strip() != '':
+                    try:
+                        month_vals[m] = float(val)
+                    except (ValueError, TypeError):
+                        month_vals[m] = float(existing.get(m) or 0.0)
+                else:
+                    month_vals[m] = float(existing.get(m) or 0.0)
+
+            total_calc = sum(month_vals.values())
+
+            cursor.execute("""
+                UPDATE total_budget
+                SET range_name = %s,
+                    sales_group = %s,
+                    part_no = %s,
+                    product_sku = %s,
+                    cost_center = %s,
+                    april = %s,
+                    may = %s,
+                    june = %s,
+                    july = %s,
+                    august = %s,
+                    september = %s,
+                    october = %s,
+                    november = %s,
+                    december = %s,
+                    january = %s,
+                    february = %s,
+                    march = %s,
+                    total = %s
+                WHERE id = %s;
+            """, (
+                range_name, sales_group, part_no, product_sku, cost_center,
+                month_vals['april'], month_vals['may'], month_vals['june'], month_vals['july'],
+                month_vals['august'], month_vals['september'], month_vals['october'], month_vals['november'],
+                month_vals['december'], month_vals['january'], month_vals['february'], month_vals['march'],
+                total_calc, item_id
+            ))
+            conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Successfully updated budget row #{item_id}!",
+        "item_id": item_id
     }
 
 

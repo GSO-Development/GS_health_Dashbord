@@ -117,10 +117,7 @@ def sync_oracle_invoices(oracle_user: str = None, oracle_password: str = None, y
                         price_adjustment, company, price_conv
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 """
-                # Filter out any HET0 catalog rows
-                filtered_inv = [r for r in inv_rows if not (str(r[6] or '').strip().upper().startswith('HET0'))]
-                cursor.executemany(inv_sql, filtered_inv)
-                cursor.execute("DELETE FROM invoice_output WHERE TRIM(catalog_no) LIKE 'HET0%' OR catalog_no LIKE '%HET0%';")
+                cursor.executemany(inv_sql, inv_rows)
             m_conn.close()
 
     except Exception as e:
@@ -138,29 +135,26 @@ def sync_oracle_invoices(oracle_user: str = None, oracle_password: str = None, y
     conn.close()
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    synced_this_run = len(inv_rows)
     sync_status["last_sync"] = now_str
     sync_status["status"] = "success"
+    sync_status["records_synced"] = len(inv_rows)
     sync_status["invoice_records"] = cnt
-    
-    if synced_this_run > 0:
-        sync_status["message"] = f"Oracle Live Sync Complete! Synced {synced_this_run:,} live invoice records from IFS (Total in DB: {cnt:,})."
-    else:
-        sync_status["message"] = f"Invoice Sync Complete! Total records in database: {cnt:,}."
+    sync_status["message"] = f"Successfully synced {len(inv_rows):,} invoice records directly from Oracle DB! Total rows: {cnt:,}"
 
     return {
         "status": "success",
         "message": sync_status["message"],
-        "records_synced": synced_this_run or cnt,
-        "total_records": cnt,
-        "last_sync": now_str
+        "records_synced": len(inv_rows),
+        "total_invoices": cnt,
+        "timestamp": now_str
     }
 
 
-def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None, year: int = None, month: int = None, start_date: str = None, end_date: str = None):
+def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None, start_date: str = None, end_date: str = None):
     """
-    STRICT READ-ONLY SYNC FOR OUTSTANDING BACKLOG:
-    Fetches outstanding_output records from Oracle DB (ifsapp.gsh_order_report@IFS_PROD_IFSAPP).
+    STRICT READ-ONLY SYNC FOR OUTSTANDING:
+    Fetches outstanding_output records from Oracle DB (ifsapp.gsh_outstanding_orders_rep@IFS_PROD_IFSAPP).
+    Supports optional date filtering.
     """
     global sync_status
     user = oracle_user or ORACLE_USER
@@ -173,10 +167,6 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
         where_parts.append(f"planned_delivery_date >= TO_DATE('{start_date}', 'YYYY-MM-DD')")
     if end_date:
         where_parts.append(f"planned_delivery_date <= TO_DATE('{end_date}', 'YYYY-MM-DD')")
-    elif year and month:
-        where_parts.append(f"EXTRACT(YEAR FROM planned_delivery_date) = {int(year)} AND EXTRACT(MONTH FROM planned_delivery_date) = {int(month)}")
-    elif year:
-        where_parts.append(f"EXTRACT(YEAR FROM planned_delivery_date) = {int(year)}")
 
     oracle_where = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -190,7 +180,7 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
             oracle_conn = oracledb.connect(user=user, password=pwd, dsn=dsn)
 
         with oracle_conn.cursor() as o_cursor:
-            o_cursor.execute(f"SELECT * FROM ifsapp.gsh_order_report@IFS_PROD_IFSAPP{oracle_where}")
+            o_cursor.execute(f"SELECT * FROM ifsapp.gsh_outstanding_orders_rep@IFS_PROD_IFSAPP{oracle_where}")
             order_rows = o_cursor.fetchall()
         oracle_conn.close()
 
@@ -201,10 +191,6 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
                     cursor.execute("DELETE FROM outstanding_output WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s;", (start_date, end_date))
                 elif start_date:
                     cursor.execute("DELETE FROM outstanding_output WHERE DATE(planned_delivery_date) >= %s;", (start_date,))
-                elif year and month:
-                    cursor.execute("DELETE FROM outstanding_output WHERE YEAR(planned_delivery_date) = %s AND MONTH(planned_delivery_date) = %s;", (year, month))
-                elif year:
-                    cursor.execute("DELETE FROM outstanding_output WHERE YEAR(planned_delivery_date) = %s;", (year,))
                 else:
                     cursor.execute("TRUNCATE TABLE outstanding_output;")
 
@@ -219,10 +205,7 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
                         line_item_no
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                 """
-                # Filter out any HET0 catalog rows
-                filtered_orders = [r for r in order_rows if not (str(r[7] or '').strip().upper().startswith('HET0'))]
-                cursor.executemany(ord_sql, filtered_orders)
-                cursor.execute("DELETE FROM outstanding_output WHERE TRIM(catalog_no) LIKE 'HET0%' OR catalog_no LIKE '%HET0%';")
+                cursor.executemany(ord_sql, order_rows)
             m_conn.close()
 
     except Exception as e:

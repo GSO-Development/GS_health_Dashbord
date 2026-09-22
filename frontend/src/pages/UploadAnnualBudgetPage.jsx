@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Search, Layers, Calendar, DollarSign, ArrowLeftRight, X, AlertCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Search, Layers, Calendar, DollarSign, ArrowLeftRight, X, AlertCircle, Edit3, Save } from 'lucide-react';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -9,6 +9,11 @@ const FISCAL_YEARS = [
   'FY 2027/28',
   'FY 2025/26',
   'FY 2024/25'
+];
+
+const MONTH_KEYS = [
+  'april', 'may', 'june', 'july', 'august', 'september',
+  'october', 'november', 'december', 'january', 'february', 'march'
 ];
 
 const UploadAnnualBudgetPage = () => {
@@ -33,12 +38,75 @@ const UploadAnnualBudgetPage = () => {
   // Overwrite Confirmation State
   const [overwritePrompt, setOverwritePrompt] = useState(null);
 
+  // Edit Row State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Toast Notification State
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleEditClick = (row) => {
+    setEditingRow(row);
+    setEditFormData({
+      id: row.id,
+      range_name: row.range_name || '',
+      sales_group: row.sales_group || '',
+      part_no: row.part_no || '',
+      product_sku: row.product_sku || '',
+      cost_center: row.cost_center || '',
+      april: row.april || 0,
+      may: row.may || 0,
+      june: row.june || 0,
+      july: row.july || 0,
+      august: row.august || 0,
+      september: row.september || 0,
+      october: row.october || 0,
+      november: row.november || 0,
+      december: row.december || 0,
+      january: row.january || 0,
+      february: row.february || 0,
+      march: row.march || 0,
+      total: row.total || 0,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditFieldChange = (field, value) => {
+    setEditFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      if (MONTH_KEYS.includes(field)) {
+        const sum = MONTH_KEYS.reduce((acc, m) => acc + (parseFloat(m === field ? value : updated[m]) || 0), 0);
+        updated.total = sum;
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveRowEdit = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingRow) return;
+
+    setSavingEdit(true);
+    try {
+      const res = await api.put(`/reports/total-budget/${editingRow.id}`, editFormData);
+      if (res.data) {
+        showToast(res.data.message || '✅ Row updated successfully!');
+        setIsEditModalOpen(false);
+        setEditingRow(null);
+        await loadBudgetData();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to update row.';
+      showToast(msg, 'error');
+    }
+    setSavingEdit(false);
   };
 
   const loadBudgetData = async () => {
@@ -252,6 +320,7 @@ const UploadAnnualBudgetPage = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontWeight: 800 }}>
               <tr style={{ color: 'var(--text-subtle)' }}>
+                <th style={{ padding: '0.6rem 0.75rem', width: '75px', textAlign: 'center' }}>Action</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Range Name</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Sales Group</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Part No</th>
@@ -274,19 +343,45 @@ const UploadAnnualBudgetPage = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="17" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="18" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading annual budget records...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="17" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="18" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No budget records found. Click <strong>Upload Annual Budget Excel</strong> to import.
                   </td>
                 </tr>
               ) : (
                 rows.map((row, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-hover)' }}>
+                  <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border-color)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-hover)' }}>
+                    {/* Action Column: Edit Button */}
+                    <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleEditClick(row)}
+                        title="Edit this budget record"
+                        style={{
+                          padding: '0.25rem 0.55rem',
+                          background: 'rgba(59,130,246,0.12)',
+                          border: '1px solid rgba(59,130,246,0.3)',
+                          borderRadius: '4px',
+                          color: '#3b82f6',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.25)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.12)'}
+                      >
+                        <Edit3 style={{ width: '13px', height: '13px' }} /> Edit
+                      </button>
+                    </td>
+
                     <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: 'var(--gsh-red)' }}>{row.range_name}</td>
                     <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: 'var(--gsh-teal)' }}>{row.sales_group}</td>
                     <td style={{ padding: '0.45rem 0.75rem', fontFamily: 'monospace', fontWeight: 800 }}>{row.part_no}</td>
@@ -445,6 +540,184 @@ const UploadAnnualBudgetPage = () => {
                 </div>
               </div>
             )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── EDIT ROW MODAL POPUP ─── */}
+      {isEditModalOpen && editingRow && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget && !savingEdit) setIsEditModalOpen(false); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, 
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', boxSizing: 'border-box' 
+          }}
+        >
+          <div 
+            className="glass-card animate-fade-in" 
+            style={{ 
+              width: '100%', maxWidth: '850px', maxHeight: '92vh', overflowY: 'auto',
+              background: 'var(--bg-card, #ffffff)', borderRadius: 'var(--radius-md)', 
+              border: '1.5px solid var(--gsh-teal)', padding: '1.75rem', 
+              display: 'flex', flexDirection: 'column', gap: '1.25rem', boxShadow: '0 25px 60px rgba(0,0,0,0.45)' 
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '1.15rem', color: 'var(--text-main)' }}>
+                  <Edit3 style={{ width: '20px', height: '20px', color: 'var(--gsh-teal)' }} />
+                  Edit Budget Record <span style={{ color: 'var(--gsh-red)', fontFamily: 'monospace' }}>#{editingRow.id}</span>
+                </div>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Update master parameters and monthly budget targets for this product line.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsEditModalOpen(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRowEdit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* Section 1: Core Information */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', background: 'var(--bg-hover)', padding: '1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                
+                {/* Range Name */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gsh-red)' }}>Range Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.range_name || ''}
+                    onChange={e => handleEditFieldChange('range_name', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Sales Group */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>Sales Group *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.sales_group || ''}
+                    onChange={e => handleEditFieldChange('sales_group', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Part No */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Part No</label>
+                  <input
+                    type="text"
+                    value={editFormData.part_no || ''}
+                    onChange={e => handleEditFieldChange('part_no', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontFamily: 'monospace', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Cost Center */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Cost Center</label>
+                  <input
+                    type="text"
+                    value={editFormData.cost_center || ''}
+                    onChange={e => handleEditFieldChange('cost_center', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem' }}
+                  />
+                </div>
+
+                {/* Product SKU */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Product SKU / Description</label>
+                  <input
+                    type="text"
+                    value={editFormData.product_sku || ''}
+                    onChange={e => handleEditFieldChange('product_sku', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 600 }}
+                  />
+                </div>
+
+              </div>
+
+              {/* Section 2: 12 Monthly Budget Targets */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                    Monthly Budget Targets (LKR)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-muted)' }}>Auto Calculated Total:</span>
+                    <strong style={{ color: 'var(--gsh-red)', fontSize: '0.95rem', background: 'rgba(200,16,46,0.08)', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
+                      Rs. {fmt(editFormData.total)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.6rem' }}>
+                  {MONTH_KEYS.map((m) => (
+                    <div key={m} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'var(--bg-hover)', padding: '0.5rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                      <label style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'capitalize', color: m === 'july' ? 'var(--gsh-teal)' : 'var(--text-muted)' }}>
+                        {m}
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={editFormData[m] !== undefined ? editFormData[m] : 0}
+                        onChange={e => handleEditFieldChange(m, e.target.value)}
+                        style={{ width: '100%', padding: '0.35rem 0.45rem', borderRadius: '3px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 700, textAlign: 'right', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  disabled={savingEdit}
+                  onClick={() => setIsEditModalOpen(false)}
+                  style={{ padding: '0.55rem 1.2rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  style={{
+                    padding: '0.55rem 1.4rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: 'none',
+                    background: 'var(--accent-gradient)',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    cursor: savingEdit ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    boxShadow: '0 4px 14px rgba(200,16,46,0.3)'
+                  }}
+                >
+                  {savingEdit ? (
+                    <RefreshCw className="animate-spin" style={{ width: '15px', height: '15px' }} />
+                  ) : (
+                    <Save style={{ width: '15px', height: '15px' }} />
+                  )}
+                  Save Changes
+                </button>
+              </div>
+
+            </form>
 
           </div>
         </div>

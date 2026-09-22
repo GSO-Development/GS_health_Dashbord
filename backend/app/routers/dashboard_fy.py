@@ -596,6 +596,46 @@ def get_distri_range_fy(
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
+        # Division mappings for sales_group -> range_name, match_type, contract_code
+        contract_to_range = {}
+        contract_to_sg = {}
+        cursor.execute("""
+            SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn,
+                   UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
+                   UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
+            FROM division_mappings 
+            WHERE range_name IS NOT NULL AND range_name != 'Range';
+        """)
+        sg_to_range = {}
+        range_to_sgs = {}
+        for r in cursor.fetchall():
+            sg_val = r.get('sg')
+            rn_val = r.get('rn')
+            m_type = r.get('m_type')
+            c_code = r.get('c_code')
+            if sg_val and rn_val:
+                s_clean = sg_val.strip()
+                r_clean = rn_val.strip()
+                sg_to_range[s_clean.lower()] = r_clean
+                if r_clean not in range_to_sgs:
+                    range_to_sgs[r_clean] = set()
+                range_to_sgs[r_clean].add(s_clean)
+                if m_type == 'CONTRACT' and c_code:
+                    contract_to_range[c_code.lower()] = r_clean
+                    contract_to_sg[c_code.lower()] = s_clean
+
+        # Official distinct Division / Range names
+        cursor.execute("""
+            SELECT DISTINCT TRIM(range_name) as rn 
+            FROM division_mappings 
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+            UNION
+            SELECT DISTINCT TRIM(range_name) as rn
+            FROM total_budget
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+        """)
+        official_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
+
         # 1. Primary target & RD target from dis_budget
         cursor.execute("""
             SELECT 
@@ -662,61 +702,109 @@ def get_distri_range_fy(
         axienta_c_map = {r['pid']: r['c_rd_act'] for r in cursor.fetchall()}
 
         # 5. Primary actual from invoice_output
+        c_list = list(contract_to_range.keys())
+        c_filter_sql = f"OR LOWER(TRIM(contract)) IN ({','.join(['%s']*len(c_list))})" if c_list else ""
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
+                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                    TRIM(COALESCE(catalog_group, '')) as sg,
                     COALESCE(SUM(net_dom_amount), 0) as m_inv
                 FROM invoice_output
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
-                GROUP BY TRIM(catalog_no);
-            """, [filter_start, filter_end] + c_params)
+                  AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+            """, [filter_start, filter_end] + c_list + c_params)
         else:
             cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
+                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                    TRIM(COALESCE(catalog_group, '')) as sg,
                     COALESCE(SUM(net_dom_amount), 0) as m_inv
                 FROM invoice_output
                 WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
-                GROUP BY TRIM(catalog_no);
-            """, [month_num, year] + c_params)
-        inv_m_map = {r['pid']: r['m_inv'] for r in cursor.fetchall()}
+                  AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+            """, [month_num, year] + c_list + c_params)
+        inv_m_map = {}
+        inv_m_pid_map = {}
+        for r in cursor.fetchall():
+            p_no = r['pid']
+            c_val = r['contract_code'].lower()
+            sg_val = r['sg']
+            amt = float(r['m_inv'] or 0.0)
+            if c_val in contract_to_range:
+                d_name = contract_to_range[c_val]
+                s_name = contract_to_sg.get(c_val, sg_val or 'General')
+                inv_m_map[(d_name, s_name, p_no)] = inv_m_map.get((d_name, s_name, p_no), 0.0) + amt
+            else:
+                inv_m_pid_map[p_no] = inv_m_pid_map.get(p_no, 0.0) + amt
 
         # 6. Cumulative Primary actual from invoice_output
         cursor.execute(f"""
             SELECT 
                 TRIM(catalog_no) as pid,
+                UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                TRIM(COALESCE(catalog_group, '')) as sg,
                 COALESCE(SUM(net_dom_amount), 0) as c_inv
             FROM invoice_output
             WHERE MONTH(invoice_date) <= %s AND YEAR(invoice_date) = %s
-              AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
-            GROUP BY TRIM(catalog_no);
-        """, [month_num, year] + c_params)
-        inv_c_map = {r['pid']: r['c_inv'] for r in cursor.fetchall()}
+              AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+            GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+        """, [month_num, year] + c_list + c_params)
+        inv_c_map = {}
+        inv_c_pid_map = {}
+        for r in cursor.fetchall():
+            p_no = r['pid']
+            c_val = r['contract_code'].lower()
+            sg_val = r['sg']
+            amt = float(r['c_inv'] or 0.0)
+            if c_val in contract_to_range:
+                d_name = contract_to_range[c_val]
+                s_name = contract_to_sg.get(c_val, sg_val or 'General')
+                inv_c_map[(d_name, s_name, p_no)] = inv_c_map.get((d_name, s_name, p_no), 0.0) + amt
+            else:
+                inv_c_pid_map[p_no] = inv_c_pid_map.get(p_no, 0.0) + amt
 
         # 7. Backlog from outstanding_output
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
+                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                    TRIM(COALESCE(catalog_group, '')) as sg,
                     COALESCE(SUM(backlog_value_base_curr), 0) as back
                 FROM outstanding_output
                 WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
-                GROUP BY TRIM(catalog_no);
-            """, [filter_start, filter_end] + c_params)
+                  AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+            """, [filter_start, filter_end] + c_list + c_params)
         else:
             cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
+                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                    TRIM(COALESCE(catalog_group, '')) as sg,
                     COALESCE(SUM(backlog_value_base_curr), 0) as back
                 FROM outstanding_output
-                WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' {c_clause}
-                GROUP BY TRIM(catalog_no);
-            """, c_params)
-        back_map = {r['pid']: r['back'] for r in cursor.fetchall()}
+                WHERE (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+            """, c_list + c_params if c_list else c_params)
+        back_map = {}
+        back_pid_map = {}
+        for r in cursor.fetchall():
+            p_no = r['pid']
+            c_val = r['contract_code'].lower()
+            sg_val = r['sg']
+            amt = float(r['back'] or 0.0)
+            if c_val in contract_to_range:
+                d_name = contract_to_range[c_val]
+                s_name = contract_to_sg.get(c_val, sg_val or 'General')
+                back_map[(d_name, s_name, p_no)] = back_map.get((d_name, s_name, p_no), 0.0) + amt
+            else:
+                back_pid_map[p_no] = back_pid_map.get(p_no, 0.0) + amt
 
         # 8. All distinct items from total_budget, invoice_output, and outstanding_output
         cursor.execute("""
@@ -731,9 +819,33 @@ def get_distri_range_fy(
         """)
         tb_items = cursor.fetchall()
 
-        # Division mappings for sales_group -> range_name
-        cursor.execute("SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL AND range_name != 'Range';")
-        sg_to_range = {r['sg'].strip().lower(): r['rn'].strip() for r in cursor.fetchall() if r.get('sg')}
+        # Division mappings for sales_group -> range_name, match_type, contract_code
+        contract_to_range = {}
+        contract_to_sg = {}
+        cursor.execute("""
+            SELECT TRIM(sales_group) as sg, TRIM(range_name) as rn,
+                   UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
+                   UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
+            FROM division_mappings 
+            WHERE range_name IS NOT NULL AND range_name != 'Range';
+        """)
+        sg_to_range = {}
+        range_to_sgs = {}
+        for r in cursor.fetchall():
+            sg_val = r.get('sg')
+            rn_val = r.get('rn')
+            m_type = r.get('m_type')
+            c_code = r.get('c_code')
+            if sg_val and rn_val:
+                s_clean = sg_val.strip()
+                r_clean = rn_val.strip()
+                sg_to_range[s_clean.lower()] = r_clean
+                if r_clean not in range_to_sgs:
+                    range_to_sgs[r_clean] = set()
+                range_to_sgs[r_clean].add(s_clean)
+                if m_type == 'CONTRACT' and c_code:
+                    contract_to_range[c_code.lower()] = r_clean
+                    contract_to_sg[c_code.lower()] = s_clean
 
         # Official distinct Division / Range names
         cursor.execute("""
@@ -747,22 +859,24 @@ def get_distri_range_fy(
         """)
         official_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
 
-        # Distinct catalog items from invoice_output for DISTRI
-        cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(description) as product_sku, TRIM(catalog_group) as sg
+        # Distinct catalog items from invoice_output
+        cursor.execute(f"""
+            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(description) as product_sku, 
+                            TRIM(catalog_group) as sg, UPPER(TRIM(contract)) as contract
             FROM invoice_output
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
-        """)
+            WHERE (UPPER(TRIM(cust_grp)) = 'DISTRI' OR LOWER(TRIM(contract)) IN ({','.join(['%s']*len(contract_to_range)) if contract_to_range else "''"}))
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """, list(contract_to_range.keys()) if contract_to_range else [])
         inv_items = cursor.fetchall()
 
-        # Distinct catalog items from outstanding_output for DISTRI
-        cursor.execute("""
-            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku, TRIM(catalog_group) as sg
+        # Distinct catalog items from outstanding_output
+        cursor.execute(f"""
+            SELECT DISTINCT TRIM(catalog_no) as part_no, TRIM(catalog_desc) as product_sku, 
+                            TRIM(catalog_group) as sg, UPPER(TRIM(contract)) as contract
             FROM outstanding_output
-            WHERE UPPER(TRIM(cust_grp)) = 'DISTRI' AND catalog_no IS NOT NULL AND TRIM(catalog_no) != ''
-              AND UPPER(TRIM(catalog_no)) NOT LIKE 'HET0%';
-        """)
+            WHERE (UPPER(TRIM(cust_grp)) = 'DISTRI' OR LOWER(TRIM(contract)) IN ({','.join(['%s']*len(contract_to_range)) if contract_to_range else "''"}))
+              AND catalog_no IS NOT NULL AND TRIM(catalog_no) != '';
+        """, list(contract_to_range.keys()) if contract_to_range else [])
         out_items = cursor.fetchall()
 
         part_to_div = {}
@@ -780,13 +894,26 @@ def get_distri_range_fy(
                 psku = r['product_sku'] or pno
                 all_merged_items[(div_name, sub_name, pno)] = psku
 
-        # 2. Invoice subcodes / items
+        # 2. Ensure each official division has at least its mapped subgroups
+        for rn in official_ranges:
+            sgs = range_to_sgs.get(rn, set())
+            for sg in sgs:
+                key = (rn, sg, 'nan')
+                if key not in all_merged_items:
+                    all_merged_items[key] = sg
+
+        # 3. Invoice subcodes / items
         for r in inv_items:
             pno = (r.get('part_no') or '').strip()
             if not pno:
                 continue
             sg = (r.get('sg') or '').strip()
-            if sg.lower() in sg_to_range:
+            c_code = (r.get('contract') or '').strip().lower()
+
+            if c_code and c_code in contract_to_range:
+                div_name = contract_to_range[c_code]
+                sub_name = contract_to_sg.get(c_code, sg or 'General')
+            elif sg.lower() in sg_to_range:
                 div_name = sg_to_range[sg.lower()]
                 sub_name = sg
             elif pno.lower() in part_to_div:
@@ -802,13 +929,18 @@ def get_distri_range_fy(
             if key not in all_merged_items:
                 all_merged_items[key] = sku
 
-        # 3. Backlog subcodes / items
+        # 4. Backlog subcodes / items
         for r in out_items:
             pno = (r.get('part_no') or '').strip()
             if not pno:
                 continue
             sg = (r.get('sg') or '').strip()
-            if sg.lower() in sg_to_range:
+            c_code = (r.get('contract') or '').strip().lower()
+
+            if c_code and c_code in contract_to_range:
+                div_name = contract_to_range[c_code]
+                sub_name = contract_to_sg.get(c_code, sg or 'General')
+            elif sg.lower() in sg_to_range:
                 div_name = sg_to_range[sg.lower()]
                 sub_name = sg
             elif pno.lower() in part_to_div:
@@ -839,9 +971,9 @@ def get_distri_range_fy(
             item_pri_tgt = float(b_info.get('m_pri_tgt', 0.0))
             item_rd_tgt = float(b_info.get('m_rd_tgt', 0.0))
             
-            m_inv_val = float(inv_m_map.get(pno, 0.0))
-            c_inv_val = float(inv_c_map.get(pno, 0.0))
-            b_val = float(back_map.get(pno, 0.0))
+            m_inv_val = float(inv_m_map.get((div_name, sub_name, pno), inv_m_pid_map.get(pno, 0.0)))
+            c_inv_val = float(inv_c_map.get((div_name, sub_name, pno), inv_c_pid_map.get(pno, 0.0)))
+            b_val = float(back_map.get((div_name, sub_name, pno), back_pid_map.get(pno, 0.0)))
             
             if b_mode == "without":
                 item_pri_act = m_inv_val
