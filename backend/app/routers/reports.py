@@ -219,15 +219,18 @@ def get_total_range_fy(
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        # 1. Fetch official distinct Range Names from division_mappings and total_budget
+        # 1. Fetch official distinct Range Names from division_mappings and total_budget (Visible on Total Range FY)
         cursor.execute("""
             SELECT DISTINCT TRIM(range_name) as rn 
             FROM division_mappings 
             WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'total_range')
             UNION
-            SELECT DISTINCT TRIM(range_name) as rn
-            FROM total_budget
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+            SELECT DISTINCT TRIM(b.range_name) as rn
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.range_name IS NOT NULL AND TRIM(b.range_name) != '' AND b.range_name != 'Range'
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range');
         """)
         all_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
         
@@ -237,9 +240,11 @@ def get_total_range_fy(
 
         # 2. Fetch Part -> (Range, Sales Group) from total_budget
         cursor.execute("""
-            SELECT TRIM(part_no) as pno, TRIM(range_name) as rn, TRIM(sales_group) as sg
-            FROM total_budget
-            WHERE part_no IS NOT NULL AND TRIM(part_no) != '';
+            SELECT TRIM(b.part_no) as pno, TRIM(b.range_name) as rn, TRIM(b.sales_group) as sg
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.part_no IS NOT NULL AND TRIM(b.part_no) != ''
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range');
         """)
         for r in cursor.fetchall():
             if r.get('pno'):
@@ -256,7 +261,8 @@ def get_total_range_fy(
                    UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
                    UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
             FROM division_mappings 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'total_range');
         """)
         for r in cursor.fetchall():
             sg = r.get('s_grp')
@@ -276,10 +282,12 @@ def get_total_range_fy(
 
         # 4. Fetch distinct range_name and sales_group from total_budget
         cursor.execute("""
-            SELECT DISTINCT TRIM(range_name) as r_name, TRIM(sales_group) as s_grp 
-            FROM total_budget 
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' 
-              AND sales_group IS NOT NULL AND TRIM(sales_group) != '';
+            SELECT DISTINCT TRIM(b.range_name) as r_name, TRIM(b.sales_group) as s_grp 
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.range_name IS NOT NULL AND TRIM(b.range_name) != '' 
+              AND b.sales_group IS NOT NULL AND TRIM(b.sales_group) != ''
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range');
         """)
         for r in cursor.fetchall():
             rn_clean = r['r_name'].strip()
@@ -292,15 +300,17 @@ def get_total_range_fy(
         # 5. Bulk fetch individual product rows from total_budget with monthly budgets
         cursor.execute("""
             SELECT 
-                TRIM(sales_group) as s_grp,
-                TRIM(part_no) as part_no,
-                TRIM(product_sku) as product_sku,
-                SUM(april) as april, SUM(may) as may, SUM(june) as june, SUM(july) as july,
-                SUM(august) as august, SUM(september) as september, SUM(october) as october,
-                SUM(november) as november, SUM(december) as december, SUM(january) as january,
-                SUM(february) as february, SUM(march) as march, SUM(total) as total
-            FROM total_budget
-            WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
+                TRIM(b.sales_group) as s_grp,
+                TRIM(b.part_no) as part_no,
+                TRIM(b.product_sku) as product_sku,
+                SUM(b.april) as april, SUM(b.may) as may, SUM(b.june) as june, SUM(b.july) as july,
+                SUM(b.august) as august, SUM(b.september) as september, SUM(b.october) as october,
+                SUM(b.november) as november, SUM(b.december) as december, SUM(b.january) as january,
+                SUM(b.february) as february, SUM(b.march) as march, SUM(b.total) as total
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.sales_group IS NOT NULL AND TRIM(b.sales_group) != ''
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range')
             GROUP BY s_grp, part_no, product_sku;
         """)
         sg_products_map = {}
@@ -325,6 +335,8 @@ def get_total_range_fy(
                 SUM(b.november) as november, SUM(b.december) as december, SUM(b.january) as january,
                 SUM(b.february) as february, SUM(b.march) as march, SUM(b.total) as total
             FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range')
             GROUP BY s_grp, r_name;
         """)
         sg_b_map = {}

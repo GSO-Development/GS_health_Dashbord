@@ -33,7 +33,8 @@ const MapDivisionsPage = () => {
   const [editMatchingRow, setEditMatchingRow] = useState(null);
   const [matchingForm, setMatchingForm] = useState({
     match_type: 'CATALOG_GROUP',
-    contract_code: ''
+    contract_code: '',
+    visibility: 'both'
   });
   const [savingMatching, setSavingMatching] = useState(false);
 
@@ -44,6 +45,7 @@ const MapDivisionsPage = () => {
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [isNotIncludedModalOpen, setIsNotIncludedModalOpen] = useState(false);
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'budget' | 'not_in_budget'
+  const [visibilityFilter, setVisibilityFilter] = useState('all'); // 'all' | 'both' | 'total_range' | 'distri_range'
   const [notIncludedSearch, setNotIncludedSearch] = useState('');
 
   const showToast = (msg, type = 'success') => {
@@ -81,7 +83,7 @@ const MapDivisionsPage = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterTab]);
+  }, [searchTerm, filterTab, visibilityFilter]);
 
   const handleAutoSync = async () => {
     try {
@@ -96,11 +98,42 @@ const MapDivisionsPage = () => {
     }
   };
 
+  const handleVisibilityChange = async (row, newVisibility) => {
+    try {
+      // Optimistically update local mappings state
+      setMappings(prev => prev.map(m => {
+        if (m.sales_group === row.sales_group) {
+          return { ...m, visibility: newVisibility };
+        }
+        return m;
+      }));
+
+      const res = await api.put('/division-mappings/update-visibility', {
+        sales_group: row.sales_group,
+        range_name: row.range_name,
+        visibility: newVisibility
+      });
+
+      if (res.data && res.data.status === 'success') {
+        const labelMap = {
+          'both': 'Both (Total & Distri)',
+          'total_range': 'Total Range FY Only',
+          'distri_range': 'Distri Range FY Only'
+        };
+        showToast(`✅ Visibility for '${row.sales_group}' updated to ${labelMap[newVisibility] || newVisibility}!`);
+      }
+    } catch {
+      showToast('Failed to update mapping visibility.', 'error');
+      loadMappings();
+    }
+  };
+
   const openMatchingModal = (row) => {
     setEditMatchingRow(row);
     setMatchingForm({
       match_type: row.match_type || 'CATALOG_GROUP',
-      contract_code: row.contract_code || ''
+      contract_code: row.contract_code || '',
+      visibility: row.visibility || 'both'
     });
   };
 
@@ -112,7 +145,8 @@ const MapDivisionsPage = () => {
         sales_group: editMatchingRow.sales_group,
         range_name: editMatchingRow.range_name,
         match_type: matchingForm.match_type,
-        contract_code: matchingForm.match_type === 'CONTRACT' ? matchingForm.contract_code : null
+        contract_code: matchingForm.match_type === 'CONTRACT' ? matchingForm.contract_code : null,
+        visibility: matchingForm.visibility
       });
 
       if (res.data && res.data.status === 'success') {
@@ -206,6 +240,12 @@ const MapDivisionsPage = () => {
       if (filterTab === 'budget' && m.upload_status !== 'Budget') return false;
       if (filterTab === 'not_in_budget' && m.upload_status !== 'Not in Budget') return false;
 
+      // Visibility filter
+      if (visibilityFilter !== 'all') {
+        const v = m.visibility || 'both';
+        if (v !== visibilityFilter) return false;
+      }
+
       // Search filter
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
@@ -216,11 +256,12 @@ const MapDivisionsPage = () => {
         (m.product_sku && m.product_sku.toLowerCase().includes(term)) ||
         (m.contract_code && m.contract_code.toLowerCase().includes(term)) ||
         (m.match_type && m.match_type.toLowerCase().includes(term)) ||
+        (m.visibility && m.visibility.toLowerCase().includes(term)) ||
         (m.upload_status && m.upload_status.toLowerCase().includes(term)) ||
         (m.id && String(m.id).includes(term))
       );
     });
-  }, [mappings, searchTerm, filterTab]);
+  }, [mappings, searchTerm, filterTab, visibilityFilter]);
 
   const totalPages = Math.ceil(filteredMappings.length / pageSize) || 1;
   const paginatedMappings = filteredMappings.slice(
@@ -481,36 +522,54 @@ const MapDivisionsPage = () => {
 
       </div>
 
-      {/* Filter Tabs: All, In Budget, Not in Budget */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginRight: '0.5rem' }}>
-          <Filter style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
-          Status Filter:
-        </span>
-        {[
-          { key: 'all', label: `All Records (${mappings.length})` },
-          { key: 'budget', label: `🟢 In Budget (${inBudgetCount})`, color: '#10b981' },
-          { key: 'not_in_budget', label: `🟠 Not in Budget (${notInBudgetCount})`, color: '#ef4444' }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setFilterTab(tab.key)}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: 'var(--radius-xs)',
-              fontSize: '0.8rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              border: filterTab === tab.key ? 'none' : '1px solid var(--border-color)',
-              background: filterTab === tab.key ? (tab.color || 'var(--gsh-teal)') : 'var(--bg-hover)',
-              color: filterTab === tab.key ? '#fff' : (tab.color || 'var(--text-main)'),
-              boxShadow: filterTab === tab.key ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
+      {/* Filter Tabs: All, In Budget, Not in Budget + Visibility Filter */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', background: 'var(--bg-card)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginRight: '0.5rem' }}>
+            <Filter style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
+            Status Filter:
+          </span>
+          {[
+            { key: 'all', label: `All Records (${mappings.length})` },
+            { key: 'budget', label: `🟢 In Budget (${inBudgetCount})`, color: '#10b981' },
+            { key: 'not_in_budget', label: `🟠 Not in Budget (${notInBudgetCount})`, color: '#ef4444' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setFilterTab(tab.key)}
+              style={{
+                padding: '0.35rem 0.75rem',
+                borderRadius: 'var(--radius-xs)',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: filterTab === tab.key ? 'none' : '1px solid var(--border-color)',
+                background: filterTab === tab.key ? (tab.color || 'var(--gsh-teal)') : 'var(--bg-hover)',
+                color: filterTab === tab.key ? '#fff' : (tab.color || 'var(--text-main)'),
+                boxShadow: filterTab === tab.key ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Visibility Filter Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'var(--bg-hover)', padding: '0.3rem 0.65rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+          <Eye style={{ width: '14px', height: '14px', color: '#10b981' }} />
+          <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Mapping Visibility:</label>
+          <select
+            value={visibilityFilter}
+            onChange={e => setVisibilityFilter(e.target.value)}
+            style={{ padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 800, outline: 'none', cursor: 'pointer' }}
           >
-            {tab.label}
-          </button>
-        ))}
+            <option value="all">All Visibilities</option>
+            <option value="both">🌐 Both (Total & Distri)</option>
+            <option value="total_range">📊 Total Range FY Only</option>
+            <option value="distri_range">📈 Distri Range FY Only</option>
+          </select>
+        </div>
       </div>
 
       {/* Search Bar, Year Filter Selector & Info Bar */}
@@ -554,7 +613,7 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* Main Division Mappings Datatable (With Interactive IFS Matching Field & Upload Status Column) */}
+      {/* Main Division Mappings Datatable (With Interactive IFS Matching Field, Visibility & Upload Status Column) */}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 330px)', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
@@ -567,22 +626,25 @@ const MapDivisionsPage = () => {
                 <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-teal)' }}>Product (SKU)</th>
                 
                 {/* COLUMN: Upload Status (Budget vs Not in Budget) */}
-                <th style={{ padding: '0.75rem 1rem', color: '#f59e0b', minWidth: '150px' }}>Upload Status</th>
+                <th style={{ padding: '0.75rem 1rem', color: '#f59e0b', minWidth: '130px' }}>Upload Status</th>
+
+                {/* COLUMN: Mapping Visibility */}
+                <th style={{ padding: '0.75rem 1rem', color: '#10b981', minWidth: '190px' }}>Mapping Visibility</th>
 
                 <th style={{ padding: '0.75rem 1rem', color: '#3b82f6', minWidth: '220px' }}>IFS Matching Field & Rule</th>
-                <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Last Updated</th>
+                <th style={{ padding: '0.75rem 1rem', width: '140px' }}>Last Updated</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading division mappings & budget master records...
                   </td>
                 </tr>
               ) : paginatedMappings.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No mapping records matching current filters.
                   </td>
                 </tr>
@@ -632,6 +694,43 @@ const MapDivisionsPage = () => {
                           <AlertTriangle style={{ width: '12px', height: '12px' }} /> Not in Budget
                         </span>
                       )}
+                    </td>
+
+                    {/* COLUMN CELL: Mapping Visibility (Interactive Dropdown) */}
+                    <td style={{ padding: '0.65rem 1rem' }}>
+                      <select
+                        value={row.visibility || 'both'}
+                        onChange={(e) => handleVisibilityChange(row, e.target.value)}
+                        style={{
+                          padding: '0.35rem 0.6rem',
+                          borderRadius: 'var(--radius-xs)',
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          outline: 'none',
+                          border: '1px solid ' + (
+                            (row.visibility === 'total_range') ? 'rgba(16, 185, 129, 0.4)' :
+                            (row.visibility === 'distri_range') ? 'rgba(245, 158, 11, 0.4)' :
+                            'rgba(59, 130, 246, 0.4)'
+                          ),
+                          background: (
+                            (row.visibility === 'total_range') ? 'rgba(16, 185, 129, 0.1)' :
+                            (row.visibility === 'distri_range') ? 'rgba(245, 158, 11, 0.1)' :
+                            'rgba(59, 130, 246, 0.1)'
+                          ),
+                          color: (
+                            (row.visibility === 'total_range') ? '#10b981' :
+                            (row.visibility === 'distri_range') ? '#f59e0b' :
+                            '#3b82f6'
+                          ),
+                          transition: 'all 0.15s ease'
+                        }}
+                        title="Choose whether this division mapping applies to Both pages, Total Range FY only, or Distri Range FY only"
+                      >
+                        <option value="both">🌐 Both (Total & Distri)</option>
+                        <option value="total_range">📊 Total Range FY Only</option>
+                        <option value="distri_range">📈 Distri Range FY Only</option>
+                      </select>
                     </td>
 
                     {/* INTERACTIVE COLUMN: IFS Matching Field */}
@@ -1192,6 +1291,31 @@ const MapDivisionsPage = () => {
                   </div>
                 </div>
               </label>
+              {/* Visibility Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.25rem' }}>
+                <label style={{ fontSize: '0.825rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Mapping Visibility across Dashboard Pages:
+                </label>
+                <select
+                  value={matchingForm.visibility || 'both'}
+                  onChange={e => setMatchingForm(p => ({ ...p, visibility: e.target.value }))}
+                  style={{
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-hover)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.825rem',
+                    fontWeight: 800,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="both">🌐 Both (Total Range FY & Distri Range FY)</option>
+                  <option value="total_range">📊 Total Range FY Only</option>
+                  <option value="distri_range">📈 Distri Range FY Only</option>
+                </select>
+              </div>
             </div>
 
             {/* Modal Footer Actions */}

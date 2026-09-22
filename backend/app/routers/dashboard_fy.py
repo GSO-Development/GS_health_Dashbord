@@ -596,7 +596,7 @@ def get_distri_range_fy(
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        # Division mappings for sales_group -> range_name, match_type, contract_code
+        # Division mappings for sales_group -> range_name, match_type, contract_code (Visible on Distri Range FY)
         contract_to_range = {}
         contract_to_sg = {}
         cursor.execute("""
@@ -604,7 +604,8 @@ def get_distri_range_fy(
                    UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
                    UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
             FROM division_mappings 
-            WHERE range_name IS NOT NULL AND range_name != 'Range';
+            WHERE range_name IS NOT NULL AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'distri_range');
         """)
         sg_to_range = {}
         range_to_sgs = {}
@@ -624,15 +625,18 @@ def get_distri_range_fy(
                     contract_to_range[c_code.lower()] = r_clean
                     contract_to_sg[c_code.lower()] = s_clean
 
-        # Official distinct Division / Range names
+        # Official distinct Division / Range names (Visible on Distri Range FY)
         cursor.execute("""
             SELECT DISTINCT TRIM(range_name) as rn 
             FROM division_mappings 
             WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'distri_range')
             UNION
-            SELECT DISTINCT TRIM(range_name) as rn
-            FROM total_budget
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+            SELECT DISTINCT TRIM(b.range_name) as rn
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.range_name IS NOT NULL AND TRIM(b.range_name) != '' AND b.range_name != 'Range'
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'distri_range');
         """)
         official_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
 
@@ -809,17 +813,19 @@ def get_distri_range_fy(
         # 8. All distinct items from total_budget, invoice_output, and outstanding_output
         cursor.execute("""
             SELECT DISTINCT
-                TRIM(range_name) as division_name,
-                TRIM(sales_group) as subgroup_name,
-                TRIM(part_no) as part_no,
-                TRIM(product_sku) as product_sku
-            FROM total_budget
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
-              AND sales_group IS NOT NULL AND TRIM(sales_group) != '';
+                TRIM(b.range_name) as division_name,
+                TRIM(b.sales_group) as subgroup_name,
+                TRIM(b.part_no) as part_no,
+                TRIM(b.product_sku) as product_sku
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.range_name IS NOT NULL AND TRIM(b.range_name) != ''
+              AND b.sales_group IS NOT NULL AND TRIM(b.sales_group) != ''
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'distri_range');
         """)
         tb_items = cursor.fetchall()
 
-        # Division mappings for sales_group -> range_name, match_type, contract_code
+        # Division mappings for sales_group -> range_name, match_type, contract_code (Visible on Distri Range FY)
         contract_to_range = {}
         contract_to_sg = {}
         cursor.execute("""
@@ -827,7 +833,8 @@ def get_distri_range_fy(
                    UPPER(TRIM(COALESCE(match_type, 'CATALOG_GROUP'))) as m_type,
                    UPPER(TRIM(COALESCE(contract_code, ''))) as c_code
             FROM division_mappings 
-            WHERE range_name IS NOT NULL AND range_name != 'Range';
+            WHERE range_name IS NOT NULL AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'distri_range');
         """)
         sg_to_range = {}
         range_to_sgs = {}
@@ -847,15 +854,18 @@ def get_distri_range_fy(
                     contract_to_range[c_code.lower()] = r_clean
                     contract_to_sg[c_code.lower()] = s_clean
 
-        # Official distinct Division / Range names
+        # Official distinct Division / Range names (Visible on Distri Range FY)
         cursor.execute("""
             SELECT DISTINCT TRIM(range_name) as rn 
             FROM division_mappings 
             WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range'
+              AND (visibility IS NULL OR visibility = '' OR visibility = 'both' OR visibility = 'distri_range')
             UNION
-            SELECT DISTINCT TRIM(range_name) as rn
-            FROM total_budget
-            WHERE range_name IS NOT NULL AND TRIM(range_name) != '' AND range_name != 'Range';
+            SELECT DISTINCT TRIM(b.range_name) as rn
+            FROM total_budget b
+            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
+            WHERE b.range_name IS NOT NULL AND TRIM(b.range_name) != '' AND b.range_name != 'Range'
+              AND (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'distri_range');
         """)
         official_ranges = sorted([r['rn'] for r in cursor.fetchall() if r.get('rn')])
 

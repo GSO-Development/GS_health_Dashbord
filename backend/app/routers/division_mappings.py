@@ -121,10 +121,26 @@ def init_division_mappings_table():
                 range_name VARCHAR(150) NOT NULL,
                 match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP',
                 contract_code VARCHAR(50) DEFAULT NULL,
+                visibility VARCHAR(50) DEFAULT 'both',
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY uk_sales_group_only (sales_group)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
+
+        try:
+            cursor.execute("ALTER TABLE division_mappings ADD COLUMN visibility VARCHAR(50) DEFAULT 'both';")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE division_mappings ADD COLUMN match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP';")
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE division_mappings ADD COLUMN contract_code VARCHAR(50) DEFAULT NULL;")
+        except Exception:
+            pass
 
         cursor.execute("SELECT COUNT(*) as cnt FROM division_mappings;")
         count = cursor.fetchone()["cnt"]
@@ -164,6 +180,46 @@ def get_available_contracts():
     return {"status": "success", "contracts": sorted(list(contracts))}
 
 
+@router.put("/update-visibility")
+def update_mapping_visibility(payload: dict = Body(...)):
+    init_division_mappings_table()
+    sales_group = str(payload.get("sales_group") or "").strip()
+    range_name = str(payload.get("range_name") or "").strip()
+    visibility = str(payload.get("visibility") or "both").strip().lower()
+
+    if visibility not in ["both", "total_range", "distri_range"]:
+        visibility = "both"
+
+    if not sales_group:
+        raise HTTPException(status_code=400, detail="Sales Group cannot be empty.")
+
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        if range_name:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name, visibility)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    range_name = VALUES(range_name),
+                    visibility = VALUES(visibility);
+            """, (sales_group, range_name, visibility))
+        else:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name, visibility)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    visibility = VALUES(visibility);
+            """, (sales_group, sales_group, visibility))
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "sales_group": sales_group,
+        "visibility": visibility,
+        "message": f"Visibility for '{sales_group}' updated to '{visibility}'."
+    }
+
+
 @router.put("/update-matching")
 def update_matching_field(payload: dict = Body(...)):
     init_division_mappings_table()
@@ -171,10 +227,16 @@ def update_matching_field(payload: dict = Body(...)):
     range_name = str(payload.get("range_name") or "").strip()
     match_type = str(payload.get("match_type") or "CATALOG_GROUP").strip().upper()
     contract_code = payload.get("contract_code")
+    visibility = payload.get("visibility")
     if contract_code:
         contract_code = str(contract_code).strip().upper()
     else:
         contract_code = None
+
+    if visibility:
+        visibility = str(visibility).strip().lower()
+        if visibility not in ["both", "total_range", "distri_range"]:
+            visibility = "both"
 
     if not sales_group:
         raise HTTPException(status_code=400, detail="Sales group cannot be empty.")
@@ -184,7 +246,17 @@ def update_matching_field(payload: dict = Body(...)):
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        if range_name:
+        if visibility:
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name, match_type, contract_code, visibility)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    range_name = COALESCE(VALUES(range_name), range_name),
+                    match_type = VALUES(match_type),
+                    contract_code = VALUES(contract_code),
+                    visibility = VALUES(visibility);
+            """, (sales_group, range_name or sales_group, match_type, contract_code, visibility))
+        elif range_name:
             cursor.execute("""
                 INSERT INTO division_mappings (sales_group, range_name, match_type, contract_code)
                 VALUES (%s, %s, %s, %s)
@@ -206,7 +278,8 @@ def update_matching_field(payload: dict = Body(...)):
         "message": f"Matching field updated for '{sales_group}' -> {match_type} {('(' + contract_code + ')') if contract_code else ''}",
         "sales_group": sales_group,
         "match_type": match_type,
-        "contract_code": contract_code
+        "contract_code": contract_code,
+        "visibility": visibility
     }
 
 
@@ -317,7 +390,8 @@ def sync_mappings_from_budget():
 @router.get("")
 def list_division_mappings(
     search: Optional[str] = Query(None),
-    year: Optional[str] = Query(None)
+    year: Optional[str] = Query(None),
+    visibility: Optional[str] = Query(None)
 ):
     init_division_mappings_table()
     conn = get_db_connection()
@@ -327,6 +401,14 @@ def list_division_mappings(
     if year and year.strip().lower() not in ["all fiscal years", "all", ""]:
         where_clauses.append("(b.fiscal_year = %s OR b.fiscal_year IS NULL OR b.fiscal_year = '')")
         params.append(year.strip())
+
+    if visibility and visibility.strip().lower() not in ["all", ""]:
+        v_clean = visibility.strip().lower()
+        if v_clean == 'both':
+            where_clauses.append("(m.visibility = 'both' OR m.visibility IS NULL OR m.visibility = '')")
+        else:
+            where_clauses.append("m.visibility = %s")
+            params.append(v_clean)
 
     if search:
         where_clauses.append("(b.sales_group LIKE %s OR b.range_name LIKE %s OR b.part_no LIKE %s OR b.product_sku LIKE %s OR m.range_name LIKE %s OR m.contract_code LIKE %s)")
@@ -347,6 +429,7 @@ def list_division_mappings(
                 TRIM(COALESCE(b.product_sku, '')) as product_sku,
                 COALESCE(m.match_type, 'CATALOG_GROUP') as match_type,
                 m.contract_code as contract_code,
+                COALESCE(m.visibility, 'both') as visibility,
                 b.fiscal_year as fiscal_year,
                 CASE 
                     WHEN COALESCE(b.total, 0) > 0 OR (b.part_no IS NOT NULL AND b.part_no != '-' AND b.part_no != '' AND b.product_sku != 'Unbudgeted (Excel)') THEN 'Budget'
@@ -368,6 +451,10 @@ def create_division_mapping(payload: dict = Body(...)):
     init_division_mappings_table()
     sales_group = str(payload.get("sales_group") or "").strip()
     range_name = str(payload.get("range_name") or "").strip()
+    visibility = str(payload.get("visibility") or "both").strip().lower()
+    if visibility not in ["both", "total_range", "distri_range"]:
+        visibility = "both"
+
     if not sales_group or not range_name:
         raise HTTPException(status_code=400, detail="Sales group and range name cannot be empty.")
 
@@ -375,10 +462,12 @@ def create_division_mapping(payload: dict = Body(...)):
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO division_mappings (sales_group, range_name)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
-            """, (sales_group, range_name))
+                INSERT INTO division_mappings (sales_group, range_name, visibility)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    range_name = VALUES(range_name),
+                    visibility = VALUES(visibility);
+            """, (sales_group, range_name, visibility))
             new_id = cursor.lastrowid
 
             # Also sync total_budget
@@ -398,7 +487,8 @@ def create_division_mapping(payload: dict = Body(...)):
         "id": new_id,
         "sales_group": sales_group,
         "range_name": range_name,
-        "message": f"Mapping created/updated for '{sales_group}' -> '{range_name}'."
+        "visibility": visibility,
+        "message": f"Mapping created/updated for '{sales_group}' -> '{range_name}' (Visibility: {visibility})."
     }
 
 
@@ -462,18 +552,29 @@ def add_new_range(payload: dict = Body(...)):
 def update_division_mapping(mapping_id: int, payload: dict = Body(...)):
     sales_group = str(payload.get("sales_group") or "").strip()
     range_name = str(payload.get("range_name") or "").strip()
+    visibility = payload.get("visibility")
     if not sales_group or not range_name:
         raise HTTPException(status_code=400, detail="Sales group and range name cannot be empty.")
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # Upsert in division_mappings
-            cursor.execute("""
-                INSERT INTO division_mappings (sales_group, range_name)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
-            """, (sales_group, range_name))
+            if visibility:
+                v_clean = str(visibility).strip().lower()
+                cursor.execute("""
+                    INSERT INTO division_mappings (sales_group, range_name, visibility)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE 
+                        range_name = VALUES(range_name),
+                        visibility = VALUES(visibility);
+                """, (sales_group, range_name, v_clean))
+            else:
+                # Upsert in division_mappings
+                cursor.execute("""
+                    INSERT INTO division_mappings (sales_group, range_name)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+                """, (sales_group, range_name))
 
             # Update all matching rows in total_budget
             try:
@@ -492,6 +593,7 @@ def update_division_mapping(mapping_id: int, payload: dict = Body(...)):
         "id": mapping_id,
         "sales_group": sales_group,
         "range_name": range_name,
+        "visibility": visibility,
         "message": f"Updated Sales Group '{sales_group}' mapped Range to '{range_name}'."
     }
 

@@ -355,10 +355,26 @@ def init_db():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     sales_group VARCHAR(150) NOT NULL,
                     range_name VARCHAR(150) NOT NULL,
+                    match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP',
+                    contract_code VARCHAR(50) DEFAULT NULL,
+                    visibility VARCHAR(50) DEFAULT 'both',
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    UNIQUE KEY uk_sales_group (sales_group, range_name)
+                    UNIQUE KEY uk_sales_group_only (sales_group)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE division_mappings ADD COLUMN match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP';")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE division_mappings ADD COLUMN contract_code VARCHAR(50) DEFAULT NULL;")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE division_mappings ADD COLUMN visibility VARCHAR(50) DEFAULT 'both';")
+            except Exception:
+                pass
 
             # 8. Table for Custom Dashboard Charts
             cursor.execute("""
