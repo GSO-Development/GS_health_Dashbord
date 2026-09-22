@@ -11,7 +11,6 @@ const ManageUsersPage = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(null);
   const [toast, setToast] = useState(null);
 
   // Modal State
@@ -43,22 +42,22 @@ const ManageUsersPage = () => {
 
   const loadUsers = async () => {
     setLoading(true);
-    setFetchError(null);
     try {
       const response = await api.get('/users');
       setUsers(response.data.users || []);
     } catch (err) {
       const status = err.response?.status;
-      const detail = err.response?.data?.detail;
       if (status === 401) {
-        setFetchError('Your login session has expired or is invalid. Please log in again with an administrator account.');
-        showToast('Session expired. Please log in again.', 'error');
+        localStorage.removeItem('gsh_token');
+        localStorage.removeItem('gsh_user');
+        window.location.href = '/login?expired=1';
+        return;
       } else if (status === 403) {
-        setFetchError('Administrator privileges are required to view and manage users.');
-        showToast('Admin privileges required.', 'error');
+        showToast('Admin privileges required', 'error');
+        navigate('/dashboard-fy', { replace: true });
+        return;
       } else {
-        setFetchError(detail || 'Failed to fetch user list from server. Please check your network connection.');
-        showToast(detail || 'Failed to fetch user list', 'error');
+        showToast(err.response?.data?.detail || 'Failed to fetch user list', 'error');
       }
     }
     setLoading(false);
@@ -292,69 +291,6 @@ const ManageUsersPage = () => {
         </div>
       </div>
 
-      {/* Error Alert Banner if fetch failed */}
-      {fetchError && (
-        <div style={{
-          padding: '1rem 1.25rem',
-          borderRadius: '12px',
-          background: 'rgba(239, 68, 68, 0.08)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <AlertTriangle style={{ width: '22px', height: '22px', color: '#ef4444', flexShrink: 0 }} />
-            <div>
-              <div style={{ fontWeight: 800, color: '#ef4444', fontSize: '0.9rem' }}>Access Error / Session Expired</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.825rem' }}>{fetchError}</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              onClick={() => loadUsers()}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.5rem 1rem',
-                borderRadius: '8px',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-main)',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                cursor: 'pointer'
-              }}
-            >
-              <RefreshCw style={{ width: '14px', height: '14px' }} />
-              Retry
-            </button>
-            <button
-              onClick={() => navigate('/login')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.5rem 1rem',
-                borderRadius: '8px',
-                background: '#c8102e',
-                border: 'none',
-                color: '#ffffff',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                cursor: 'pointer'
-              }}
-            >
-              <LogIn style={{ width: '14px', height: '14px' }} />
-              Login as Admin
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Main User Accounts Table */}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -378,13 +314,6 @@ const ManageUsersPage = () => {
             <tbody>
               {loading ? (
                 <tr><td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading users list...</td></tr>
-              ) : fetchError ? (
-                <tr>
-                  <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
-                    <AlertCircle style={{ width: '24px', height: '24px', margin: '0 auto 0.5rem auto', display: 'block' }} />
-                    <span style={{ fontWeight: 700 }}>{fetchError}</span>
-                  </td>
-                </tr>
               ) : users.length === 0 ? (
                 <tr><td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No users registered. Click 'Add User Account' above to create one.</td></tr>
               ) : users.map(u => (

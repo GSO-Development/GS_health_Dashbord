@@ -2,9 +2,10 @@ import io
 import re
 from typing import Optional
 from datetime import datetime, date
-from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status
+from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Depends
 import pandas as pd
 from app.core.database import get_db_connection
+from app.core.security import require_admin
 
 router = APIRouter(prefix="/api/reports", tags=["Budget Reports"])
 
@@ -72,7 +73,7 @@ def get_total_budget(
 
 
 # Excel Upload Endpoint for Total Budget
-@router.post("/budget/upload-excel")
+@router.post("/budget/upload-excel", dependencies=[Depends(require_admin)])
 async def upload_annual_budget_excel(
     file: UploadFile = File(...),
     fiscal_year: str = Form("FY 2026/27"),
@@ -316,7 +317,7 @@ def get_dis_budget(
 
 
 # Excel Upload Endpoint for Dis Budget
-@router.post("/dis-budget/upload-excel")
+@router.post("/dis-budget/upload-excel", dependencies=[Depends(require_admin)])
 async def upload_dis_budget_excel(
     file: UploadFile = File(...),
     fiscal_year: str = Form("FY 2026/27"),

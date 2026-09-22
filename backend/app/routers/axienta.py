@@ -3,13 +3,14 @@ import re
 import calendar
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Body
+from fastapi import APIRouter, Query, File, UploadFile, Form, HTTPException, status, Body, Depends
 import pandas as pd
 try:
     import pymssql
 except ImportError:
     pymssql = None
 from app.core.database import get_db_connection
+from app.core.security import require_admin
 
 router = APIRouter(prefix="/api/axienta", tags=["Axienta Data"])
 
@@ -340,7 +341,7 @@ def get_axienta_records(
     }
 
 
-@router.post("/sync-data")
+@router.post("/sync-data", dependencies=[Depends(require_admin)])
 def sync_axienta_mssql_data(payload: dict = Body(...)):
     """Sync whole month data from MS SQL Server (172.16.0.21 DB: GSH)."""
     year = int(payload.get("year", 2026))
@@ -367,7 +368,7 @@ def sync_axienta_mssql_data(payload: dict = Body(...)):
     }
 
 
-@router.post("/sync-day")
+@router.post("/sync-day", dependencies=[Depends(require_admin)])
 def sync_axienta_single_day(payload: dict = Body(...)):
     """Sync a single specific date from MS SQL Server (172.16.0.21 DB: GSH)."""
     year = int(payload.get("year", 2026))
@@ -397,7 +398,7 @@ def sync_axienta_single_day(payload: dict = Body(...)):
     }
 
 
-@router.post("/upload-excel")
+@router.post("/upload-excel", dependencies=[Depends(require_admin)])
 async def upload_axienta_excel(
     file: UploadFile = File(...),
     entry_date: str = Form(...),

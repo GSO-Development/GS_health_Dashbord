@@ -45,7 +45,7 @@ load_env_file()
 
 JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "CHANGE_THIS_IN_PRODUCTION_MIN_32_CHARS!!")
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
+JWT_EXPIRE_HOURS: int = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
 
 # ── Audit Logger ─────────────────────────────────────────────────────────────
 audit_logger = logging.getLogger("gsh.audit")

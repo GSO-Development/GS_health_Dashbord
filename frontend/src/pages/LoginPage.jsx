@@ -24,6 +24,11 @@ const LoginPage = () => {
     const userStr = params.get('user');
     const errParam = params.get('error');
     const emailParam = params.get('email');
+    const expiredParam = params.get('expired');
+
+    if (expiredParam) {
+      setError('Your session has expired. Please log in again.');
+    }
 
     // FIX-9: Exchange temporary oauth_code securely via POST
     if (oauthCode) {

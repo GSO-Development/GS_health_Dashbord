@@ -1,8 +1,9 @@
 from typing import Optional
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Depends
+from app.core.security import require_admin
 from app.services.oracle_sync import sync_oracle_live, sync_oracle_invoices, sync_oracle_outstanding, sync_status
 
-router = APIRouter(prefix="/api/oracle-sync", tags=["Oracle Sync"])
+router = APIRouter(prefix="/api/oracle-sync", tags=["Oracle Sync"], dependencies=[Depends(require_admin)])
 
 @router.get("/status")
 def get_oracle_sync_status():

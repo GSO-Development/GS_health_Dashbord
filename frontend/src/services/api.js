@@ -25,10 +25,15 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Check if session token expired
-      const detail = error.response.data?.detail || '';
-      if (typeof detail === 'string' && (detail.toLowerCase().includes('expired') || detail.toLowerCase().includes('legacy') || detail.toLowerCase().includes('invalid'))) {
-        console.warn('Authentication token expired or invalid:', detail);
+      // Clear expired authentication credentials
+      localStorage.removeItem('gsh_token');
+      localStorage.removeItem('gsh_user');
+      
+      // Auto-redirect to login page immediately if not already on login or welcome page
+      if (typeof window !== 'undefined' && 
+          !window.location.pathname.includes('/login') && 
+          !window.location.pathname.includes('/welcome')) {
+        window.location.href = '/login?expired=1';
       }
     }
     return Promise.reject(error);
