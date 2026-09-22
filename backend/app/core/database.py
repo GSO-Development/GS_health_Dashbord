@@ -112,9 +112,15 @@ def init_db():
                     INDEX idx_order_no (order_no),
                     INDEX idx_delivery_customer (delivery_customer),
                     INDEX idx_catalog_no (catalog_no),
-                    INDEX idx_invoice_date (invoice_date)
+                    INDEX idx_invoice_date (invoice_date),
+                    UNIQUE KEY uk_invoice_item_contract (invoice_no, item_id, contract)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE invoice_output ADD UNIQUE KEY uk_invoice_item_contract (invoice_no, item_id, contract);")
+            except Exception:
+                pass
 
             # 2. Table for Outstanding Output
             cursor.execute("""

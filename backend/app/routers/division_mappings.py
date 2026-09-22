@@ -211,55 +211,63 @@ def update_matching_field(payload: dict = Body(...)):
 
 
 @router.get("/stats")
-def get_mapping_stats():
+def get_mapping_stats(year: Optional[str] = Query(None)):
     init_division_mappings_table()
     conn = get_db_connection()
     with conn.cursor() as cursor:
+        year_filter_tb = ""
+        params_tb = []
+        if year and year.strip().lower() not in ["all fiscal years", "all", ""]:
+            year_filter_tb = "WHERE (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '')"
+            params_tb.append(year.strip())
+
         # Total unique Sales Groups in total_budget and division_mappings
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT COUNT(DISTINCT sg) as cnt FROM (
-                SELECT TRIM(sales_group) as sg FROM total_budget WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
+                SELECT TRIM(sales_group) as sg FROM total_budget {year_filter_tb}
                 UNION
                 SELECT TRIM(sales_group) as sg FROM division_mappings WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
             ) t;
-        """)
+        """, params_tb)
         tb_sg_count = cursor.fetchone()['cnt'] or 0
 
         # Total unique Ranges in division_mappings and total_budget
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT COUNT(DISTINCT rn) as cnt FROM (
                 SELECT TRIM(range_name) as rn FROM division_mappings WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
                 UNION
-                SELECT TRIM(range_name) as rn FROM total_budget WHERE range_name IS NOT NULL AND TRIM(range_name) != ''
+                SELECT TRIM(range_name) as rn FROM total_budget {year_filter_tb}
             ) t;
-        """)
+        """, params_tb)
         div_range_count = cursor.fetchone()['cnt'] or 0
 
         # Mapped count vs Unmapped count in total_budget
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT 
                 COUNT(DISTINCT CASE WHEN m.sales_group IS NOT NULL THEN b.sales_group END) as mapped_cnt,
-                COUNT(DISTINCT CASE WHEN m.sales_group IS NULL THEN b.sales_group END) as unmapped_cnt
+                COUNT(DISTINCT CASE WHEN m.sales_group IS NULL THEN b.sales_group END) as unmapped_cnt,
+                COUNT(DISTINCT CASE WHEN (COALESCE(b.total, 0) = 0 OR b.product_sku = 'Unbudgeted (Excel)') THEN b.sales_group END) as not_in_budget_cnt
             FROM total_budget b
             LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
-            WHERE b.sales_group IS NOT NULL AND TRIM(b.sales_group) != '';
-        """)
+            {year_filter_tb.replace('fiscal_year', 'b.fiscal_year')};
+        """, params_tb)
         m_row = cursor.fetchone()
         mapped_cnt = m_row['mapped_cnt'] or 0
         unmapped_cnt = m_row['unmapped_cnt'] or 0
+        not_in_budget_cnt = m_row['not_in_budget_cnt'] or 0
 
         # Total items count in total_budget
-        cursor.execute("SELECT COUNT(*) as cnt FROM total_budget;")
+        cursor.execute(f"SELECT COUNT(*) as cnt FROM total_budget {year_filter_tb};", params_tb)
         total_items_cnt = cursor.fetchone()['cnt'] or 0
 
-        # Unmapped Sales Groups list
-        cursor.execute("""
-            SELECT DISTINCT TRIM(b.sales_group) as unmapped_sg, TRIM(b.range_name) as target_range
+        # List of items not in budget
+        cursor.execute(f"""
+            SELECT DISTINCT TRIM(b.sales_group) as sales_group, TRIM(b.range_name) as range_name
             FROM total_budget b
-            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
-            WHERE m.sales_group IS NULL AND b.sales_group IS NOT NULL AND TRIM(b.sales_group) != '';
-        """)
-        unmapped_list = cursor.fetchall()
+            WHERE (COALESCE(b.total, 0) = 0 OR b.product_sku = 'Unbudgeted (Excel)')
+              {"AND " + year_filter_tb.replace("WHERE ", "") if year_filter_tb else ""};
+        """, params_tb)
+        not_in_budget_list = cursor.fetchall()
 
     conn.close()
     return {
@@ -268,8 +276,9 @@ def get_mapping_stats():
         "total_ranges": div_range_count,
         "mapped_count": mapped_cnt,
         "unmapped_count": unmapped_cnt,
+        "not_in_budget_count": not_in_budget_cnt,
         "total_items": total_items_cnt,
-        "unmapped_list": unmapped_list
+        "not_in_budget_list": not_in_budget_list
     }
 
 
@@ -315,6 +324,10 @@ def list_division_mappings(
     where_clauses = []
     params = []
 
+    if year and year.strip().lower() not in ["all fiscal years", "all", ""]:
+        where_clauses.append("(b.fiscal_year = %s OR b.fiscal_year IS NULL OR b.fiscal_year = '')")
+        params.append(year.strip())
+
     if search:
         where_clauses.append("(b.sales_group LIKE %s OR b.range_name LIKE %s OR b.part_no LIKE %s OR b.product_sku LIKE %s OR m.range_name LIKE %s OR m.contract_code LIKE %s)")
         like_str = f"%{search}%"
@@ -334,6 +347,11 @@ def list_division_mappings(
                 TRIM(COALESCE(b.product_sku, '')) as product_sku,
                 COALESCE(m.match_type, 'CATALOG_GROUP') as match_type,
                 m.contract_code as contract_code,
+                b.fiscal_year as fiscal_year,
+                CASE 
+                    WHEN COALESCE(b.total, 0) > 0 OR (b.part_no IS NOT NULL AND b.part_no != '-' AND b.part_no != '' AND b.product_sku != 'Unbudgeted (Excel)') THEN 'Budget'
+                    ELSE 'Not in Budget'
+                END as upload_status,
                 DATE_FORMAT(COALESCE(m.updated_at, NOW()), '%%Y-%%m-%%d %%H:%%i') as updated_at
             FROM total_budget b
             LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
@@ -654,14 +672,17 @@ def delete_division_mapping(mapping_id: int):
 @router.post("/compare-excel")
 async def compare_excel_mappings(
     file: UploadFile = File(...),
-    year: Optional[str] = Query(None)
+    year: Optional[str] = Query(None),
+    fiscal_year: Optional[str] = Query(None)
 ):
     """
     Accepts an Excel file with 2 columns: Sales Group and Range.
-    Compares the uploaded Sales Groups and Ranges against existing total_budget and division_mappings.
-    Classifies each uploaded record as 'Included' (already in budget / mapped) or 'Not Included' (not in budget).
-    Returns total summary, counts, not included list, and all compared items.
+    Compares the uploaded Sales Groups and Ranges against existing annual budget for the selected Fiscal Year.
+    Inserts / Updates division_mappings and adds any unbudgeted rows into total_budget (total = 0).
+    Classifies each uploaded record as 'Budget' (in annual budget) or 'Not in Budget' (unbudgeted).
     """
+    selected_fy = fiscal_year or year or "FY 2026/27"
+
     if not file.filename.lower().endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an Excel (.xlsx or .xls) file.")
 
@@ -725,101 +746,110 @@ async def compare_excel_mappings(
     if not uploaded_rows:
         raise HTTPException(status_code=400, detail="No valid Sales Group or Range rows found in the uploaded file.")
 
-    # Query existing database records
     init_division_mappings_table()
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # 1. Total budget sales groups and ranges
-            if year and year.lower() not in ["all fiscal years", "all", ""]:
-                cursor.execute("""
-                    SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn 
-                    FROM total_budget 
-                    WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '' 
-                      AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '');
-                """, (year,))
-            else:
-                cursor.execute("""
-                    SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn 
-                    FROM total_budget 
-                    WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
-                """)
-            budget_rows = cursor.fetchall()
-            budget_sgs = set(r['sg'] for r in budget_rows if r.get('sg'))
-            budget_sg_rn_pairs = set((r['sg'], r['rn']) for r in budget_rows if r.get('sg') and r.get('rn'))
-
-            # 2. Division mappings
+            # 1. Fetch existing budgeted sales groups for this fiscal year
             cursor.execute("""
-                SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn, match_type, contract_code 
-                FROM division_mappings 
-                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
-            """)
-            mapping_rows = cursor.fetchall()
-            mapped_sgs = set(r['sg'] for r in mapping_rows if r.get('sg'))
-            mapped_sg_rn_pairs = set((r['sg'], r['rn']) for r in mapping_rows if r.get('sg') and r.get('rn'))
-            sg_mapping_dict = {r['sg']: r for r in mapping_rows if r.get('sg')}
+                SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn, 
+                                COALESCE(SUM(total), 0) as total_amt
+                FROM total_budget 
+                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '' 
+                  AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '')
+                  AND product_sku != 'Unbudgeted (Excel)'
+                GROUP BY LOWER(TRIM(sales_group)), LOWER(TRIM(range_name));
+            """, (selected_fy,))
+            budget_rows = cursor.fetchall()
+            budgeted_sgs = set(r['sg'] for r in budget_rows if r.get('sg') and float(r.get('total_amt') or 0) > 0)
+
+            # 2. Process each uploaded pair into database
+            included_items = []
+            not_included_items = []
+            all_compared = []
+
+            for item in uploaded_rows:
+                sg = item["sales_group"]
+                rn = item["range_name"]
+                sg_l = sg.lower()
+
+                # Always update division_mappings table
+                cursor.execute("""
+                    INSERT INTO division_mappings (sales_group, range_name)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+                """, (sg, rn))
+
+                if sg_l in budgeted_sgs:
+                    # Exists with budget > 0 in total_budget
+                    cursor.execute("""
+                        UPDATE total_budget 
+                        SET range_name = %s 
+                        WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s)) 
+                          AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '');
+                    """, (rn, sg, selected_fy))
+
+                    record = {
+                        "sales_group": sg,
+                        "range_name": rn,
+                        "status": "Budget",
+                        "in_budget": True,
+                        "reason": "Found in Annual Budget Master"
+                    }
+                    included_items.append(record)
+                    all_compared.append(record)
+                else:
+                    # Not in budget -> Insert unbudgeted row into total_budget if not already present
+                    cursor.execute("""
+                        SELECT id FROM total_budget 
+                        WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s))
+                          AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '')
+                        LIMIT 1;
+                    """, (sg, selected_fy))
+                    existing_row = cursor.fetchone()
+
+                    if existing_row:
+                        cursor.execute("""
+                            UPDATE total_budget 
+                            SET range_name = %s 
+                            WHERE id = %s;
+                        """, (rn, existing_row['id']))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO total_budget (
+                                fiscal_year, sales_group, range_name, part_no, product_sku, 
+                                april, may, june, july, august, september, october, november, december, january, february, march, total
+                            ) VALUES (
+                                %s, %s, %s, '-', 'Unbudgeted (Excel)',
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                            );
+                        """, (selected_fy, sg, rn))
+
+                    record = {
+                        "sales_group": sg,
+                        "range_name": rn,
+                        "status": "Not in Budget",
+                        "in_budget": False,
+                        "reason": "Not in Annual Budget (Excel Upload)"
+                    }
+                    not_included_items.append(record)
+                    all_compared.append(record)
+
+        conn.commit()
     finally:
         conn.close()
-
-    # Compare and classify
-    all_compared = []
-    not_included_items = []
-    included_items = []
-
-    for item in uploaded_rows:
-        sg = item["sales_group"]
-        rn = item["range_name"]
-        sg_l = sg.lower()
-        rn_l = rn.lower()
-
-        in_budget = sg_l in budget_sgs
-        in_mappings = sg_l in mapped_sgs
-        exact_budget_pair = (sg_l, rn_l) in budget_sg_rn_pairs
-        exact_mapped_pair = (sg_l, rn_l) in mapped_sg_rn_pairs
-
-        # If it exists in total_budget OR division_mappings
-        if in_budget or in_mappings:
-            status = "Included"
-            reason = "Found in Budget Master" if in_budget else "Found in Division Mappings"
-            mapping_info = sg_mapping_dict.get(sg_l, {})
-            record = {
-                "sales_group": sg,
-                "range_name": rn,
-                "status": "Included",
-                "in_budget": in_budget,
-                "in_mappings": in_mappings,
-                "reason": reason,
-                "match_type": mapping_info.get("match_type", "CATALOG_GROUP") if in_mappings else "CATALOG_GROUP",
-                "contract_code": mapping_info.get("contract_code") if in_mappings else None
-            }
-            included_items.append(record)
-            all_compared.append(record)
-        else:
-            status = "Not Included"
-            reason = "Not found in Annual Budget or Mappings"
-            record = {
-                "sales_group": sg,
-                "range_name": rn,
-                "status": "Not Included",
-                "in_budget": False,
-                "in_mappings": False,
-                "reason": reason,
-                "match_type": "CATALOG_GROUP",
-                "contract_code": None
-            }
-            not_included_items.append(record)
-            all_compared.append(record)
 
     return {
         "status": "success",
         "file_name": file.filename,
+        "fiscal_year": selected_fy,
         "total_uploaded_rows": len(uploaded_rows),
         "included_count": len(included_items),
         "not_included_count": len(not_included_items),
         "not_included_items": not_included_items,
         "included_items": included_items,
         "all_compared_items": all_compared,
-        "message": f"Excel parsed successfully: {len(included_items)} Included, {len(not_included_items)} Not Included (Missing from Budget)."
+        "message": f"Successfully processed {len(uploaded_rows)} mappings for {selected_fy}! ({len(included_items)} in Budget, {len(not_included_items)} Unbudgeted added to Master)."
     }
 
 
@@ -829,6 +859,7 @@ def bulk_save_unmapped_mappings(payload: dict = Body(...)):
     Optional helper to save uploaded unmapped/not included items into division_mappings table.
     """
     items = payload.get("items", [])
+    fiscal_year = payload.get("fiscal_year") or "FY 2026/27"
     if not items:
         raise HTTPException(status_code=400, detail="No items provided to save.")
 
@@ -846,6 +877,17 @@ def bulk_save_unmapped_mappings(payload: dict = Body(...)):
                         VALUES (%s, %s, 'CATALOG_GROUP', NULL)
                         ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
                     """, (sg, rn))
+
+                    cursor.execute("""
+                        INSERT INTO total_budget (
+                            fiscal_year, sales_group, range_name, part_no, product_sku, 
+                            april, may, june, july, august, september, october, november, december, january, february, march, total
+                        ) VALUES (
+                            %s, %s, %s, '-', 'Unbudgeted (Excel)',
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                        )
+                        ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+                    """, (fiscal_year, sg, rn))
                     saved_count += 1
         conn.commit()
     finally:
@@ -853,7 +895,7 @@ def bulk_save_unmapped_mappings(payload: dict = Body(...)):
 
     return {
         "status": "success",
-        "message": f"Successfully added {saved_count} new mappings to division_mappings table!",
+        "message": f"Successfully saved {saved_count} unmapped items to Division Mappings & Budget Master!",
         "saved_count": saved_count
     }
 

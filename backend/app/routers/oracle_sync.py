@@ -20,7 +20,8 @@ def trigger_invoice_sync(
         month = payload.get("month")
         start_date = payload.get("start_date")
         end_date = payload.get("end_date")
-        result = sync_oracle_invoices(oracle_user, oracle_password, year, month, start_date, end_date)
+        contract = payload.get("contract")
+        result = sync_oracle_invoices(oracle_user, oracle_password, year, month, start_date, end_date, contract)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -36,7 +37,8 @@ def trigger_outstanding_sync(
         month = payload.get("month")
         start_date = payload.get("start_date")
         end_date = payload.get("end_date")
-        result = sync_oracle_outstanding(oracle_user, oracle_password, year, month, start_date, end_date)
+        contract = payload.get("contract")
+        result = sync_oracle_outstanding(oracle_user, oracle_password, year, month, start_date, end_date, contract)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

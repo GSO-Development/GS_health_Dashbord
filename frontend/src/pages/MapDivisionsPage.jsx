@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { 
   Network, Search, Eye, 
   CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, Package, Database, DatabaseZap,
-  SlidersHorizontal, Check, Settings2, X, Building2, Upload, FileSpreadsheet, AlertTriangle, FileUp, PlusCircle, Sparkles, Filter
+  SlidersHorizontal, Check, Settings2, X, Building2, Upload, FileSpreadsheet, AlertTriangle, FileUp, PlusCircle, Sparkles, Filter, Calendar
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -15,7 +15,7 @@ const FISCAL_YEARS = [
 
 const MapDivisionsPage = () => {
   const [mappings, setMappings] = useState([]);
-  const [stats, setStats] = useState({ total_sales_groups: 0, total_ranges: 0, mapped_count: 0, unmapped_count: 0, unmapped_list: [] });
+  const [stats, setStats] = useState({ total_sales_groups: 0, total_ranges: 0, mapped_count: 0, unmapped_count: 0, not_in_budget_count: 0, total_items: 0, not_in_budget_list: [] });
   const [availableContracts, setAvailableContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,14 +37,13 @@ const MapDivisionsPage = () => {
   });
   const [savingMatching, setSavingMatching] = useState(false);
 
-  // ─── EXCEL UPLOAD & COMPARE STATE ───
+  // ─── EXCEL UPLOAD STATE ───
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [selectedExcelFile, setSelectedExcelFile] = useState(null);
+  const [uploadFiscalYear, setUploadFiscalYear] = useState('FY 2026/27');
   const [uploadingExcel, setUploadingExcel] = useState(false);
-  const [uploadCompareResult, setUploadCompareResult] = useState(null);
   const [isNotIncludedModalOpen, setIsNotIncludedModalOpen] = useState(false);
-  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'uploaded' | 'included' | 'not_included'
-  const [savingUnmapped, setSavingUnmapped] = useState(false);
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'budget' | 'not_in_budget'
   const [notIncludedSearch, setNotIncludedSearch] = useState('');
 
   const showToast = (msg, type = 'success') => {
@@ -52,12 +51,12 @@ const MapDivisionsPage = () => {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const loadMappings = async () => {
+  const loadMappings = async (yearToLoad = selectedYear) => {
     setLoading(true);
     try {
       const [resMap, resStats, resContracts] = await Promise.all([
-        api.get('/division-mappings', { params: { search: searchTerm, year: selectedYear } }),
-        api.get('/division-mappings/stats'),
+        api.get('/division-mappings', { params: { search: searchTerm, year: yearToLoad } }),
+        api.get('/division-mappings/stats', { params: { year: yearToLoad } }),
         api.get('/division-mappings/contracts')
       ]);
 
@@ -77,7 +76,7 @@ const MapDivisionsPage = () => {
   };
 
   useEffect(() => {
-    loadMappings();
+    loadMappings(selectedYear);
   }, [selectedYear]);
 
   useEffect(() => {
@@ -155,13 +154,15 @@ const MapDivisionsPage = () => {
     try {
       const res = await api.post('/division-mappings/compare-excel', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        params: { year: selectedYear }
+        params: { fiscal_year: uploadFiscalYear, year: uploadFiscalYear }
       });
 
       if (res.data && res.data.status === 'success') {
-        setUploadCompareResult(res.data);
+        showToast(`✅ Processed: ${res.data.included_count} in Budget, ${res.data.not_included_count} Unbudgeted added!`);
         setIsUploadModalOpen(false);
-        showToast(`✅ Excel Compared: ${res.data.included_count} Included, ${res.data.not_included_count} Not in Budget!`);
+        setSelectedExcelFile(null);
+        setSelectedYear(uploadFiscalYear);
+        loadMappings(uploadFiscalYear);
       } else {
         showToast('Failed to parse Excel file.', 'error');
       }
@@ -170,36 +171,6 @@ const MapDivisionsPage = () => {
       showToast(msg, 'error');
     }
     setUploadingExcel(false);
-  };
-
-  const handleClearUploadCompare = () => {
-    setUploadCompareResult(null);
-    setSelectedExcelFile(null);
-    setFilterTab('all');
-    showToast('Uploaded comparison cleared.', 'info');
-  };
-
-  const handleSaveAllUnmapped = async () => {
-    if (!uploadCompareResult || !uploadCompareResult.not_included_items || uploadCompareResult.not_included_items.length === 0) {
-      return;
-    }
-    setSavingUnmapped(true);
-    try {
-      const res = await api.post('/division-mappings/bulk-save-unmapped', {
-        items: uploadCompareResult.not_included_items
-      });
-      if (res.data && res.data.status === 'success') {
-        showToast(`✅ ${res.data.saved_count} unmapped items added to Division Mappings!`);
-        setIsNotIncludedModalOpen(false);
-        loadMappings();
-      } else {
-        showToast('Failed to save unmapped items.', 'error');
-      }
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Error saving unmapped items.';
-      showToast(msg, 'error');
-    }
-    setSavingUnmapped(false);
   };
 
   // Derived Analytics & Unique Lists
@@ -219,66 +190,21 @@ const MapDivisionsPage = () => {
     return Array.from(set).sort();
   }, [mappings]);
 
-  // Upload mapping lookup map (for fast O(1) status check in table)
-  const uploadLookupMap = useMemo(() => {
-    if (!uploadCompareResult || !uploadCompareResult.all_compared_items) return new Map();
-    const map = new Map();
-    uploadCompareResult.all_compared_items.forEach(item => {
-      if (item.sales_group) {
-        map.set(item.sales_group.trim().toLowerCase(), item);
-      }
-    });
-    return map;
-  }, [uploadCompareResult]);
+  // Counts of Budget vs Not in Budget
+  const inBudgetCount = useMemo(() => {
+    return mappings.filter(m => m.upload_status === 'Budget').length;
+  }, [mappings]);
 
-  // Merge table rows (including uploaded non-included rows if user uploaded an Excel file)
-  const combinedTableRows = useMemo(() => {
-    const existing = mappings.map(m => {
-      const sgKey = (m.sales_group || '').trim().toLowerCase();
-      const uploadItem = uploadLookupMap.get(sgKey);
-      return {
-        ...m,
-        is_uploaded: !!uploadItem,
-        upload_status: uploadItem ? uploadItem.status : null,
-        upload_reason: uploadItem ? uploadItem.reason : null
-      };
-    });
-
-    if (uploadCompareResult && uploadCompareResult.not_included_items) {
-      // Find not included items that are not already in mappings
-      const existingSgKeys = new Set(mappings.map(m => (m.sales_group || '').trim().toLowerCase()));
-      const extraRows = [];
-      uploadCompareResult.not_included_items.forEach((item, idx) => {
-        const sgKey = (item.sales_group || '').trim().toLowerCase();
-        if (!existingSgKeys.has(sgKey)) {
-          extraRows.push({
-            id: `UP-${idx + 1}`,
-            sales_group: item.sales_group,
-            range_name: item.range_name,
-            part_no: '-',
-            product_sku: 'Uploaded Item (Not in Budget)',
-            match_type: 'CATALOG_GROUP',
-            contract_code: null,
-            updated_at: 'Uploaded File',
-            is_uploaded: true,
-            upload_status: 'Not Included',
-            upload_reason: item.reason || 'Not in Annual Budget'
-          });
-        }
-      });
-      return [...existing, ...extraRows];
-    }
-
-    return existing;
-  }, [mappings, uploadLookupMap, uploadCompareResult]);
+  const notInBudgetCount = useMemo(() => {
+    return mappings.filter(m => m.upload_status === 'Not in Budget').length;
+  }, [mappings]);
 
   // Filtered table rows
   const filteredMappings = useMemo(() => {
-    return combinedTableRows.filter(m => {
+    return mappings.filter(m => {
       // Tab filter
-      if (filterTab === 'uploaded' && !m.is_uploaded) return false;
-      if (filterTab === 'included' && m.upload_status !== 'Included') return false;
-      if (filterTab === 'not_included' && m.upload_status !== 'Not Included') return false;
+      if (filterTab === 'budget' && m.upload_status !== 'Budget') return false;
+      if (filterTab === 'not_in_budget' && m.upload_status !== 'Not in Budget') return false;
 
       // Search filter
       if (!searchTerm.trim()) return true;
@@ -294,7 +220,7 @@ const MapDivisionsPage = () => {
         (m.id && String(m.id).includes(term))
       );
     });
-  }, [combinedTableRows, searchTerm, filterTab]);
+  }, [mappings, searchTerm, filterTab]);
 
   const totalPages = Math.ceil(filteredMappings.length / pageSize) || 1;
   const paginatedMappings = filteredMappings.slice(
@@ -328,17 +254,20 @@ const MapDivisionsPage = () => {
                 </span>
               </h1>
               <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.825rem', color: 'var(--text-muted)' }}>
-                Master hierarchy mapping between <strong>total_budget Sales Groups</strong>, <strong>45 Parent Division Ranges</strong>, and <strong>IFS Oracle Match Rules</strong>.
+                Master hierarchy mapping between <strong>Annual Budget Sales Groups</strong>, <strong>45 Parent Division Ranges</strong>, and <strong>IFS Oracle Match Rules</strong>.
               </p>
             </div>
           </div>
 
-          {/* Action Buttons: Excel Upload Compare & Auto-Sync */}
+          {/* Action Buttons: Excel Upload & Auto-Sync */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             
-            {/* BUTTON: Upload Excel Compare */}
+            {/* BUTTON: Upload Excel (Sales Group & Range) */}
             <button
-              onClick={() => setIsUploadModalOpen(true)}
+              onClick={() => {
+                setUploadFiscalYear(selectedYear);
+                setIsUploadModalOpen(true);
+              }}
               className="btn btn-primary"
               style={{
                 display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1rem',
@@ -346,25 +275,13 @@ const MapDivisionsPage = () => {
                 border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.25)',
                 cursor: 'pointer'
               }}
-              title="Upload Excel with Sales Group and Range columns to check which are included vs not included in Budget"
+              title="Upload Excel with Sales Group and Range columns for unbudgeted or new items"
             >
               <FileSpreadsheet style={{ width: '16px', height: '16px' }} />
               Upload Excel (Sales Group & Range)
             </button>
 
-            {uploadCompareResult && (
-              <button
-                onClick={handleClearUploadCompare}
-                className="btn btn-secondary"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 0.85rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}
-                title="Clear uploaded Excel comparison"
-              >
-                <X style={{ width: '14px', height: '14px' }} />
-                Clear Uploaded
-              </button>
-            )}
-
-            {/* BUTTON: Auto-Sync Master */}
+            {/* BUTTON: Auto-Sync from Budget Master */}
             <button
               onClick={handleAutoSync}
               className="btn btn-secondary"
@@ -378,7 +295,7 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* 5 Summary Stat Cards (Including new "Upload Not Include" Card) */}
+      {/* 5 Summary Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
         
         {/* CARD 1: Total Sales Groups */}
@@ -449,7 +366,7 @@ const MapDivisionsPage = () => {
           </div>
         </div>
 
-        {/* CARD 3: Mapped Count */}
+        {/* CARD 3: In Budget Count */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid #10b981', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -458,23 +375,23 @@ const MapDivisionsPage = () => {
               </div>
               <div>
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  MAPPED COUNT
+                  BUDGET MASTER
                 </span>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>total_budget Sales Groups mapped</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>With Allocated Budget</p>
               </div>
             </div>
 
             <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
-              ✅ 100% Active
+              ✅ Budget Master
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981' }}>
-              {stats.mapped_count} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Mapped</span>
+              {inBudgetCount} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
             </div>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
-              From total_budget
+              In {selectedYear}
             </span>
           </div>
         </div>
@@ -490,7 +407,7 @@ const MapDivisionsPage = () => {
                 <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
                   TOTAL ITEMS COUNT
                 </span>
-                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mapped Product SKUs / Items</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>All Mapped SKUs / Items</p>
               </div>
             </div>
 
@@ -501,117 +418,100 @@ const MapDivisionsPage = () => {
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {(stats.total_items || mappings.length).toLocaleString('en-US')} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
+              {mappings.length.toLocaleString('en-US')} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
             </div>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
-              From total_budget items
+              Master Table Total
             </span>
           </div>
         </div>
 
-        {/* CARD 5: 🌟 UPLOAD NOT INCLUDE (NEW CARD AS REQUESTED) */}
+        {/* CARD 5: 🌟 UPLOAD NOT INCLUDE (UNBUDGETED PRODUCTS) */}
         <div 
           className="glass-card" 
           style={{ 
             padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', 
-            borderLeft: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '4px solid #ef4444' : '4px solid #f59e0b', 
-            background: uploadCompareResult ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.04) 0%, var(--bg-card) 100%)' : 'var(--bg-card)',
+            borderLeft: notInBudgetCount > 0 ? '4px solid #ef4444' : '4px solid #f59e0b', 
+            background: notInBudgetCount > 0 ? 'linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--bg-card) 100%)' : 'var(--bg-card)',
             position: 'relative' 
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)', color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: notInBudgetCount > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)', color: notInBudgetCount > 0 ? '#ef4444' : '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <AlertTriangle style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
-                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : '#f59e0b' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: notInBudgetCount > 0 ? '#ef4444' : '#f59e0b' }}>
                   UPLOAD NOT INCLUDE
                 </span>
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  {uploadCompareResult ? `From ${uploadCompareResult.file_name}` : 'Upload Excel to compare'}
+                  Unbudgeted Products
                 </p>
               </div>
             </div>
 
-            {uploadCompareResult ? (
+            {notInBudgetCount > 0 && (
               <button
                 onClick={() => setIsNotIncludedModalOpen(true)}
-                title="View All Uploaded Items Not Included in Budget"
+                title="View All Uploaded Items Not in Budget"
                 style={{ 
                   display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', 
                   background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', 
                   borderRadius: 'var(--radius-xs)', color: '#ef4444', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer' 
                 }}
               >
-                <Eye style={{ width: '14px', height: '14px' }} /> View List ({uploadCompareResult.not_included_count})
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsUploadModalOpen(true)}
-                title="Upload Excel File"
-                style={{ 
-                  display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', 
-                  background: 'var(--bg-hover)', border: '1px solid var(--border-color)', 
-                  borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' 
-                }}
-              >
-                <Upload style={{ width: '14px', height: '14px', color: '#f59e0b' }} /> Upload
+                <Eye style={{ width: '14px', height: '14px' }} /> View List ({notInBudgetCount})
               </button>
             )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : (uploadCompareResult ? '#10b981' : 'var(--text-muted)') }}>
-              {uploadCompareResult ? uploadCompareResult.not_included_count : '-'}{' '}
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: notInBudgetCount > 0 ? '#ef4444' : '#10b981' }}>
+              {notInBudgetCount}{' '}
               <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-                {uploadCompareResult ? 'Not in Budget' : 'No File Uploaded'}
+                {notInBudgetCount > 0 ? 'Not in Budget' : 'All Budgeted'}
               </span>
             </div>
-            {uploadCompareResult && (
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                {uploadCompareResult.included_count} Included
-              </span>
-            )}
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+              {selectedYear}
+            </span>
           </div>
         </div>
 
       </div>
 
-      {/* Upload Status Tabs (Shown when an Excel file has been uploaded) */}
-      {uploadCompareResult && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginRight: '0.5rem' }}>
-            <Filter style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
-            View Filter:
-          </span>
-          {[
-            { key: 'all', label: `All Records (${combinedTableRows.length})` },
-            { key: 'uploaded', label: `Uploaded in Excel (${uploadCompareResult.total_uploaded_rows})` },
-            { key: 'included', label: `Included in Budget (${uploadCompareResult.included_count})`, color: '#10b981' },
-            { key: 'not_included', label: `⚠️ Not Included in Budget (${uploadCompareResult.not_included_count})`, color: '#ef4444' }
-          ].map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setFilterTab(tab.key)}
-              style={{
-                padding: '0.35rem 0.75rem',
-                borderRadius: 'var(--radius-xs)',
-                fontSize: '0.8rem',
-                fontWeight: 800,
-                cursor: 'pointer',
-                border: filterTab === tab.key ? 'none' : '1px solid var(--border-color)',
-                background: filterTab === tab.key ? (tab.color || 'var(--gsh-teal)') : 'var(--bg-hover)',
-                color: filterTab === tab.key ? '#fff' : (tab.color || 'var(--text-main)'),
-                boxShadow: filterTab === tab.key ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Filter Tabs: All, In Budget, Not in Budget */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginRight: '0.5rem' }}>
+          <Filter style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
+          Status Filter:
+        </span>
+        {[
+          { key: 'all', label: `All Records (${mappings.length})` },
+          { key: 'budget', label: `🟢 In Budget (${inBudgetCount})`, color: '#10b981' },
+          { key: 'not_in_budget', label: `🟠 Not in Budget (${notInBudgetCount})`, color: '#ef4444' }
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterTab(tab.key)}
+            style={{
+              padding: '0.35rem 0.75rem',
+              borderRadius: 'var(--radius-xs)',
+              fontSize: '0.8rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              border: filterTab === tab.key ? 'none' : '1px solid var(--border-color)',
+              background: filterTab === tab.key ? (tab.color || 'var(--gsh-teal)') : 'var(--bg-hover)',
+              color: filterTab === tab.key ? '#fff' : (tab.color || 'var(--text-main)'),
+              boxShadow: filterTab === tab.key ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {/* Search Bar, Year Filter Selector & Info Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -621,7 +521,7 @@ const MapDivisionsPage = () => {
             <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
             <input
               type="text"
-              placeholder="Search Sales Group, Range, Part No, Contract..."
+              placeholder="Search Sales Group, Range, Part No, Status..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={{ width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', outline: 'none' }}
@@ -666,8 +566,8 @@ const MapDivisionsPage = () => {
                 <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-red)' }}>Part No.</th>
                 <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-teal)' }}>Product (SKU)</th>
                 
-                {/* NEW COLUMN: Upload Status */}
-                <th style={{ padding: '0.75rem 1rem', color: '#f59e0b', minWidth: '140px' }}>Upload Status</th>
+                {/* COLUMN: Upload Status (Budget vs Not in Budget) */}
+                <th style={{ padding: '0.75rem 1rem', color: '#f59e0b', minWidth: '150px' }}>Upload Status</th>
 
                 <th style={{ padding: '0.75rem 1rem', color: '#3b82f6', minWidth: '220px' }}>IFS Matching Field & Rule</th>
                 <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Last Updated</th>
@@ -688,7 +588,7 @@ const MapDivisionsPage = () => {
                 </tr>
               ) : (
                 paginatedMappings.map((row) => (
-                  <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', background: row.upload_status === 'Not Included' ? 'rgba(239, 68, 68, 0.03)' : 'inherit' }}>
+                  <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', background: row.upload_status === 'Not in Budget' ? 'rgba(245, 158, 11, 0.04)' : 'inherit' }}>
                     <td style={{ padding: '0.65rem 1rem', fontWeight: 800, color: 'var(--gsh-red)', fontFamily: 'monospace' }}>
                       #{row.id}
                     </td>
@@ -705,40 +605,36 @@ const MapDivisionsPage = () => {
                       </span>
                     </td>
 
-                    {/* Part No. (from total_budget) */}
+                    {/* Part No. */}
                     <td style={{ padding: '0.65rem 1rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--gsh-red)' }}>
                       {row.part_no || '-'}
                     </td>
 
-                    {/* Product (SKU) (from total_budget) */}
+                    {/* Product (SKU) */}
                     <td style={{ padding: '0.65rem 1rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '260px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.product_sku}>
                       {row.product_sku || '-'}
                     </td>
 
-                    {/* NEW COLUMN CELL: Upload Status (Include / Not Include) */}
+                    {/* COLUMN CELL: Upload Status (Budget vs Not in Budget) */}
                     <td style={{ padding: '0.65rem 1rem' }}>
-                      {row.upload_status === 'Included' ? (
+                      {row.upload_status === 'Budget' ? (
                         <span 
-                          title="Present in Annual Budget & Division Mappings"
-                          style={{ padding: '0.2rem 0.55rem', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          title="Imported from Annual Budget Master"
+                          style={{ padding: '0.25rem 0.6rem', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                         >
-                          <CheckCircle style={{ width: '12px', height: '12px' }} /> Included
-                        </span>
-                      ) : row.upload_status === 'Not Included' ? (
-                        <span 
-                          title="Not present in Annual Budget"
-                          style={{ padding: '0.2rem 0.55rem', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                        >
-                          <AlertTriangle style={{ width: '12px', height: '12px' }} /> Not Included
+                          <CheckCircle style={{ width: '12px', height: '12px' }} /> Budget
                         </span>
                       ) : (
-                        <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem', fontFamily: 'monospace' }}>
-                          -
+                        <span 
+                          title="Unbudgeted product (Uploaded via Excel or Manual)"
+                          style={{ padding: '0.25rem 0.6rem', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                        >
+                          <AlertTriangle style={{ width: '12px', height: '12px' }} /> Not in Budget
                         </span>
                       )}
                     </td>
 
-                    {/* INTERACTIVE COLUMN: IFS Matching Field (Shows & Configures Oracle IFS source rule) */}
+                    {/* INTERACTIVE COLUMN: IFS Matching Field */}
                     <td style={{ padding: '0.65rem 1rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                         {row.match_type === 'CONTRACT' ? (
@@ -764,7 +660,7 @@ const MapDivisionsPage = () => {
                             >
                               CATALOG_GROUP
                             </span>
-                            {row.part_no && (
+                            {row.part_no && row.part_no !== '-' && (
                               <span 
                                 title="Direct SKU matching via CATALOG_NO"
                                 style={{ padding: '0.2rem 0.45rem', background: 'rgba(200,16,46,0.08)', color: 'var(--gsh-red)', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(200,16,46,0.2)' }}
@@ -776,37 +672,35 @@ const MapDivisionsPage = () => {
                         )}
 
                         {/* Configure/Edit Button */}
-                        {typeof row.id === 'number' && (
-                          <button
-                            onClick={() => openMatchingModal(row)}
-                            title="Configure IFS Matching Field & Rule"
-                            style={{
-                              padding: '0.2rem 0.45rem',
-                              background: 'var(--bg-hover)',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '4px',
-                              color: 'var(--text-muted)',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              transition: 'all 0.15s ease'
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.color = 'var(--text-main)';
-                              e.currentTarget.style.borderColor = 'var(--gsh-teal)';
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.color = 'var(--text-muted)';
-                              e.currentTarget.style.borderColor = 'var(--border-color)';
-                            }}
-                          >
-                            <SlidersHorizontal style={{ width: '12px', height: '12px' }} />
-                            Edit
-                          </button>
-                        )}
+                        <button
+                          onClick={() => openMatchingModal(row)}
+                          title="Configure IFS Matching Field & Rule"
+                          style={{
+                            padding: '0.2rem 0.45rem',
+                            background: 'var(--bg-hover)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '4px',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = 'var(--text-main)';
+                            e.currentTarget.style.borderColor = 'var(--gsh-teal)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                          }}
+                        >
+                          <SlidersHorizontal style={{ width: '12px', height: '12px' }} />
+                          Edit
+                        </button>
                       </div>
                     </td>
 
@@ -879,7 +773,7 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* ─── MODAL 1: EXCEL UPLOAD MODAL (Sales Group & Range Comparison) ─── */}
+      {/* ─── MODAL 1: EXCEL UPLOAD MODAL (With Fiscal Year Selection) ─── */}
       {isUploadModalOpen && ReactDOM.createPortal(
         <div 
           onClick={(e) => { if (e.target === e.currentTarget && !uploadingExcel) setIsUploadModalOpen(false); }}
@@ -906,7 +800,7 @@ const MapDivisionsPage = () => {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Upload Excel & Compare Budget
+                    Upload Excel & Update Mappings
                   </h3>
                   <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Upload Excel with <strong>Sales Group</strong> and <strong>Range</strong> columns
@@ -923,6 +817,26 @@ const MapDivisionsPage = () => {
               </button>
             </div>
 
+            {/* Fiscal Year Selector for Upload */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', background: 'var(--bg-hover)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+              <label style={{ fontSize: '0.825rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Calendar style={{ width: '15px', height: '15px', color: 'var(--gsh-teal)' }} />
+                Select Target Fiscal Year:
+              </label>
+              <select
+                value={uploadFiscalYear}
+                onChange={e => setUploadFiscalYear(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.85rem', fontWeight: 800, outline: 'none', cursor: 'pointer' }}
+              >
+                {FISCAL_YEARS.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Items will be compared and updated against <strong>{uploadFiscalYear}</strong> annual budget.
+              </span>
+            </div>
+
             {/* Instruction Banner */}
             <div style={{ padding: '0.85rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.8rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               <div style={{ fontWeight: 800, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -933,7 +847,7 @@ const MapDivisionsPage = () => {
                 • Column 2: <strong>Range</strong> (e.g. <code>OAKNET</code>, <code>HETERO</code>, <code>UPL HETERO</code>)
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginTop: '0.2rem' }}>
-                ℹ️ The system will compare with <strong>upload-annual-budget</strong>. Any Sales Group not in budget will be highlighted in the <strong>"Upload Not Include"</strong> card.
+                ℹ️ Unbudgeted Sales Groups will be marked as <strong>"Not in Budget"</strong> and permanently added to division mappings so IFS actuals map cleanly to their Range!
               </div>
             </div>
 
@@ -960,7 +874,7 @@ const MapDivisionsPage = () => {
                   {selectedExcelFile ? selectedExcelFile.name : 'Click to select Excel (.xlsx, .xls) file'}
                 </span>
                 <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  {selectedExcelFile ? `${(selectedExcelFile.size / 1024).toFixed(1)} KB — Ready to Compare` : 'Only Excel spreadsheet files are supported'}
+                  {selectedExcelFile ? `${(selectedExcelFile.size / 1024).toFixed(1)} KB — Ready to Upload & Map` : 'Only Excel spreadsheet files are supported'}
                 </p>
               </div>
             </label>
@@ -983,7 +897,7 @@ const MapDivisionsPage = () => {
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.4rem', fontSize: '0.85rem', fontWeight: 800, background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: selectedExcelFile ? 'pointer' : 'not-allowed', opacity: selectedExcelFile ? 1 : 0.6 }}
               >
                 {uploadingExcel ? <RefreshCw className="spin" style={{ width: '15px', height: '15px' }} /> : <Upload style={{ width: '15px', height: '15px' }} />}
-                {uploadingExcel ? 'Parsing & Comparing...' : 'Compare Excel Data'}
+                {uploadingExcel ? 'Updating & Mapping...' : 'Upload & Update Mappings'}
               </button>
             </div>
 
@@ -993,9 +907,9 @@ const MapDivisionsPage = () => {
       )}
 
       {/* ─── MODAL 2: "UPLOAD NOT INCLUDE" INSPECT MODAL ─── */}
-      {isNotIncludedModalOpen && uploadCompareResult && ReactDOM.createPortal(
+      {isNotIncludedModalOpen && ReactDOM.createPortal(
         <div 
-          onClick={(e) => { if (e.target === e.currentTarget && !savingUnmapped) setIsNotIncludedModalOpen(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) setIsNotIncludedModalOpen(false); }}
           style={{ 
             position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
             zIndex: 999999, background: 'rgba(0, 0, 0, 0.75)', 
@@ -1014,15 +928,15 @@ const MapDivisionsPage = () => {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <AlertTriangle style={{ width: '20px', height: '20px' }} />
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Uploaded Items Not in Annual Budget ({uploadCompareResult.not_included_count})
+                    Unbudgeted Products ({notInBudgetCount}) — {selectedYear}
                   </h3>
                   <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    These Sales Groups exist in <strong>{uploadCompareResult.file_name}</strong> but are missing from <strong>Annual Budget</strong>.
+                    These Sales Groups exist in Division Mappings but have no allocated budget in <strong>{selectedYear} Annual Budget</strong>.
                   </p>
                 </div>
               </div>
@@ -1057,11 +971,12 @@ const MapDivisionsPage = () => {
                     <th style={{ padding: '0.6rem 0.75rem', width: '40px' }}>#</th>
                     <th style={{ padding: '0.6rem 0.75rem' }}>Sales Group</th>
                     <th style={{ padding: '0.6rem 0.75rem' }}>Target Range</th>
-                    <th style={{ padding: '0.6rem 0.75rem', color: '#ef4444' }}>Status</th>
+                    <th style={{ padding: '0.6rem 0.75rem', color: '#f59e0b' }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {uploadCompareResult.not_included_items
+                  {mappings
+                    .filter(item => item.upload_status === 'Not in Budget')
                     .filter(item => {
                       if (!notIncludedSearch.trim()) return true;
                       const s = notIncludedSearch.toLowerCase();
@@ -1082,7 +997,7 @@ const MapDivisionsPage = () => {
                           </span>
                         </td>
                         <td style={{ padding: '0.55rem 0.75rem' }}>
-                          <span style={{ padding: '0.15rem 0.45rem', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', borderRadius: '4px', fontWeight: 800, fontSize: '0.72rem' }}>
+                          <span style={{ padding: '0.15rem 0.45rem', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', borderRadius: '4px', fontWeight: 800, fontSize: '0.72rem' }}>
                             Not in Budget
                           </span>
                         </td>
@@ -1092,31 +1007,18 @@ const MapDivisionsPage = () => {
               </table>
             </div>
 
-            {/* Modal Footer with One-Click Save option */}
+            {/* Modal Footer */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Total: <strong>{uploadCompareResult.not_included_count}</strong> unbudgeted items
+                Total: <strong>{notInBudgetCount}</strong> unbudgeted items in <strong>{selectedYear}</strong>
               </div>
-              <div style={{ display: 'flex', gap: '0.6rem' }}>
-                <button 
-                  type="button" 
-                  onClick={() => setIsNotIncludedModalOpen(false)} 
-                  style={{ padding: '0.45rem 1rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.825rem', cursor: 'pointer' }}
-                >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  disabled={savingUnmapped || uploadCompareResult.not_included_count === 0}
-                  onClick={handleSaveAllUnmapped}
-                  className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 1.1rem', fontSize: '0.825rem', fontWeight: 800, background: 'var(--gsh-teal)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: 'pointer' }}
-                  title="Save these missing sales groups to Division Mappings table"
-                >
-                  {savingUnmapped ? <RefreshCw className="spin" style={{ width: '14px', height: '14px' }} /> : <PlusCircle style={{ width: '14px', height: '14px' }} />}
-                  {savingUnmapped ? 'Saving...' : 'Add All to Division Mappings'}
-                </button>
-              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsNotIncludedModalOpen(false)} 
+                style={{ padding: '0.45rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.825rem', cursor: 'pointer' }}
+              >
+                Close
+              </button>
             </div>
 
           </div>
