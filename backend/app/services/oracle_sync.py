@@ -180,7 +180,7 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
             oracle_conn = oracledb.connect(user=user, password=pwd, dsn=dsn)
 
         with oracle_conn.cursor() as o_cursor:
-            o_cursor.execute(f"SELECT * FROM ifsapp.gsh_outstanding_orders_rep@IFS_PROD_IFSAPP{oracle_where}")
+            o_cursor.execute(f"SELECT * FROM ifsapp.gsh_order_report@IFS_PROD_IFSAPP{oracle_where}")
             order_rows = o_cursor.fetchall()
         oracle_conn.close()
 
