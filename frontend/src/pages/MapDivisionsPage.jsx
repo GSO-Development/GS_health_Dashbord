@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   Network, Search, Eye, 
   CheckCircle, AlertCircle, RefreshCw, ChevronLeft, ChevronRight, Hash, Layers, Tag, CheckSquare, Package, Database, DatabaseZap,
-  SlidersHorizontal, Check, Settings2, X, Building2, Upload, FileSpreadsheet, FileText, Download, Filter
+  SlidersHorizontal, Check, Settings2, X, Building2, Upload, FileSpreadsheet, AlertTriangle, FileUp, PlusCircle, Sparkles, Filter
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -15,20 +15,11 @@ const FISCAL_YEARS = [
 
 const MapDivisionsPage = () => {
   const [mappings, setMappings] = useState([]);
-  const [stats, setStats] = useState({ 
-    total_sales_groups: 0, 
-    total_ranges: 0, 
-    mapped_count: 0, 
-    unmapped_count: 0, 
-    not_in_budget_count: 0,
-    total_items: 0,
-    unmapped_list: [] 
-  });
+  const [stats, setStats] = useState({ total_sales_groups: 0, total_ranges: 0, mapped_count: 0, unmapped_count: 0, unmapped_list: [] });
   const [availableContracts, setAvailableContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState('FY 2026/27');
-  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'INCLUDED' | 'NOT_INCLUDED'
   const [toast, setToast] = useState(null);
 
   // Pagination state
@@ -46,12 +37,15 @@ const MapDivisionsPage = () => {
   });
   const [savingMatching, setSavingMatching] = useState(false);
 
-  // Excel Upload Modal State
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadFile, setUploadFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
-  const fileInputRef = useRef(null);
+  // ─── EXCEL UPLOAD & COMPARE STATE ───
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [selectedExcelFile, setSelectedExcelFile] = useState(null);
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [uploadCompareResult, setUploadCompareResult] = useState(null);
+  const [isNotIncludedModalOpen, setIsNotIncludedModalOpen] = useState(false);
+  const [filterTab, setFilterTab] = useState('all'); // 'all' | 'uploaded' | 'included' | 'not_included'
+  const [savingUnmapped, setSavingUnmapped] = useState(false);
+  const [notIncludedSearch, setNotIncludedSearch] = useState('');
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -88,7 +82,7 @@ const MapDivisionsPage = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter]);
+  }, [searchTerm, filterTab]);
 
   const handleAutoSync = async () => {
     try {
@@ -135,48 +129,77 @@ const MapDivisionsPage = () => {
     setSavingMatching(false);
   };
 
-  const handleExcelUpload = async (e) => {
-    e.preventDefault();
-    if (!uploadFile) {
-      showToast('Please select an Excel or CSV file to upload.', 'error');
+  // ─── EXCEL UPLOAD HANDLER ───
+  const handleExcelFileSelect = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        showToast('Only Excel files (.xlsx, .xls) are allowed!', 'error');
+        return;
+      }
+      setSelectedExcelFile(file);
+    }
+  };
+
+  const handleExcelUploadSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!selectedExcelFile) {
+      showToast('Please select an Excel file first.', 'error');
       return;
     }
 
-    setUploading(true);
-    setUploadResult(null);
-
+    setUploadingExcel(true);
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    formData.append('file', selectedExcelFile);
 
     try {
-      const res = await api.post('/division-mappings/upload-excel', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const res = await api.post('/division-mappings/compare-excel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        params: { year: selectedYear }
       });
 
       if (res.data && res.data.status === 'success') {
-        setUploadResult(res.data);
-        showToast(res.data.message || '✅ Excel mappings uploaded and processed successfully!');
-        loadMappings();
+        setUploadCompareResult(res.data);
+        setIsUploadModalOpen(false);
+        showToast(`✅ Excel Compared: ${res.data.included_count} Included, ${res.data.not_included_count} Not in Budget!`);
       } else {
-        showToast('Failed to upload Excel file.', 'error');
+        showToast('Failed to parse Excel file.', 'error');
       }
     } catch (err) {
-      const detail = err.response?.data?.detail || err.message || 'Error uploading file';
-      showToast(`Upload failed: ${detail}`, 'error');
+      const msg = err.response?.data?.detail || 'Error uploading Excel file.';
+      showToast(msg, 'error');
     }
-    setUploading(false);
+    setUploadingExcel(false);
   };
 
-  const downloadSampleTemplate = () => {
-    const csvContent = "Sales Group,Range\nUPL HETERO,UPL HETERO\nHETERO,HETERO\nSAMPLE GROUP,SAMPLE RANGE\n";
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "sales_group_range_mapping_template.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleClearUploadCompare = () => {
+    setUploadCompareResult(null);
+    setSelectedExcelFile(null);
+    setFilterTab('all');
+    showToast('Uploaded comparison cleared.', 'info');
+  };
+
+  const handleSaveAllUnmapped = async () => {
+    if (!uploadCompareResult || !uploadCompareResult.not_included_items || uploadCompareResult.not_included_items.length === 0) {
+      return;
+    }
+    setSavingUnmapped(true);
+    try {
+      const res = await api.post('/division-mappings/bulk-save-unmapped', {
+        items: uploadCompareResult.not_included_items
+      });
+      if (res.data && res.data.status === 'success') {
+        showToast(`✅ ${res.data.saved_count} unmapped items added to Division Mappings!`);
+        setIsNotIncludedModalOpen(false);
+        loadMappings();
+      } else {
+        showToast('Failed to save unmapped items.', 'error');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Error saving unmapped items.';
+      showToast(msg, 'error');
+    }
+    setSavingUnmapped(false);
   };
 
   // Derived Analytics & Unique Lists
@@ -196,28 +219,82 @@ const MapDivisionsPage = () => {
     return Array.from(set).sort();
   }, [mappings]);
 
-  // Counts for status filters
-  const includedCount = useMemo(() => mappings.filter(m => (m.upload_status || '').toLowerCase() === 'included').length, [mappings]);
-  const notIncludedCount = useMemo(() => mappings.filter(m => (m.upload_status || '').toLowerCase() === 'not included').length, [mappings]);
+  // Upload mapping lookup map (for fast O(1) status check in table)
+  const uploadLookupMap = useMemo(() => {
+    if (!uploadCompareResult || !uploadCompareResult.all_compared_items) return new Map();
+    const map = new Map();
+    uploadCompareResult.all_compared_items.forEach(item => {
+      if (item.sales_group) {
+        map.set(item.sales_group.trim().toLowerCase(), item);
+      }
+    });
+    return map;
+  }, [uploadCompareResult]);
+
+  // Merge table rows (including uploaded non-included rows if user uploaded an Excel file)
+  const combinedTableRows = useMemo(() => {
+    const existing = mappings.map(m => {
+      const sgKey = (m.sales_group || '').trim().toLowerCase();
+      const uploadItem = uploadLookupMap.get(sgKey);
+      return {
+        ...m,
+        is_uploaded: !!uploadItem,
+        upload_status: uploadItem ? uploadItem.status : null,
+        upload_reason: uploadItem ? uploadItem.reason : null
+      };
+    });
+
+    if (uploadCompareResult && uploadCompareResult.not_included_items) {
+      // Find not included items that are not already in mappings
+      const existingSgKeys = new Set(mappings.map(m => (m.sales_group || '').trim().toLowerCase()));
+      const extraRows = [];
+      uploadCompareResult.not_included_items.forEach((item, idx) => {
+        const sgKey = (item.sales_group || '').trim().toLowerCase();
+        if (!existingSgKeys.has(sgKey)) {
+          extraRows.push({
+            id: `UP-${idx + 1}`,
+            sales_group: item.sales_group,
+            range_name: item.range_name,
+            part_no: '-',
+            product_sku: 'Uploaded Item (Not in Budget)',
+            match_type: 'CATALOG_GROUP',
+            contract_code: null,
+            updated_at: 'Uploaded File',
+            is_uploaded: true,
+            upload_status: 'Not Included',
+            upload_reason: item.reason || 'Not in Annual Budget'
+          });
+        }
+      });
+      return [...existing, ...extraRows];
+    }
+
+    return existing;
+  }, [mappings, uploadLookupMap, uploadCompareResult]);
 
   // Filtered table rows
-  const filteredMappings = mappings.filter(m => {
-    if (statusFilter === 'INCLUDED' && (m.upload_status || '').toLowerCase() !== 'included') return false;
-    if (statusFilter === 'NOT_INCLUDED' && (m.upload_status || '').toLowerCase() !== 'not included') return false;
+  const filteredMappings = useMemo(() => {
+    return combinedTableRows.filter(m => {
+      // Tab filter
+      if (filterTab === 'uploaded' && !m.is_uploaded) return false;
+      if (filterTab === 'included' && m.upload_status !== 'Included') return false;
+      if (filterTab === 'not_included' && m.upload_status !== 'Not Included') return false;
 
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      (m.sales_group && m.sales_group.toLowerCase().includes(term)) ||
-      (m.range_name && m.range_name.toLowerCase().includes(term)) ||
-      (m.part_no && m.part_no.toLowerCase().includes(term)) ||
-      (m.product_sku && m.product_sku.toLowerCase().includes(term)) ||
-      (m.contract_code && m.contract_code.toLowerCase().includes(term)) ||
-      (m.match_type && m.match_type.toLowerCase().includes(term)) ||
-      (m.upload_status && m.upload_status.toLowerCase().includes(term)) ||
-      (m.id && String(m.id).includes(term))
-    );
-  });
+      // Search filter
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        (m.sales_group && m.sales_group.toLowerCase().includes(term)) ||
+        (m.range_name && m.range_name.toLowerCase().includes(term)) ||
+        (m.part_no && String(m.part_no).toLowerCase().includes(term)) ||
+        (m.product_sku && m.product_sku.toLowerCase().includes(term)) ||
+        (m.contract_code && m.contract_code.toLowerCase().includes(term)) ||
+        (m.match_type && m.match_type.toLowerCase().includes(term)) ||
+        (m.upload_status && m.upload_status.toLowerCase().includes(term)) ||
+        (m.id && String(m.id).includes(term))
+      );
+    });
+  }, [combinedTableRows, searchTerm, filterTab]);
 
   const totalPages = Math.ceil(filteredMappings.length / pageSize) || 1;
   const paginatedMappings = filteredMappings.slice(
@@ -251,29 +328,43 @@ const MapDivisionsPage = () => {
                 </span>
               </h1>
               <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.825rem', color: 'var(--text-muted)' }}>
-                Hierarchy mapping between <strong>Sales Groups</strong>, <strong>Division Ranges</strong>, and <strong>IFS Oracle Rules</strong> (Includes Annual Budget & Unbudgeted Uploads).
+                Master hierarchy mapping between <strong>total_budget Sales Groups</strong>, <strong>45 Parent Division Ranges</strong>, and <strong>IFS Oracle Match Rules</strong>.
               </p>
             </div>
           </div>
 
-          {/* Action Buttons: Upload Excel + Auto-Sync Master */}
+          {/* Action Buttons: Excel Upload Compare & Auto-Sync */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            {/* Excel Upload Button */}
+            
+            {/* BUTTON: Upload Excel Compare */}
             <button
-              onClick={() => {
-                setUploadFile(null);
-                setUploadResult(null);
-                setUploadModalOpen(true);
-              }}
+              onClick={() => setIsUploadModalOpen(true)}
               className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1rem', fontSize: '0.82rem', fontWeight: 800, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', border: 'none', color: '#fff', borderRadius: 'var(--radius-xs)', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)', cursor: 'pointer' }}
-              title="Upload an Excel sheet with Sales Group and Range columns"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1rem',
+                fontSize: '0.82rem', fontWeight: 800, background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', boxShadow: '0 4px 12px rgba(245, 158, 11, 0.25)',
+                cursor: 'pointer'
+              }}
+              title="Upload Excel with Sales Group and Range columns to check which are included vs not included in Budget"
             >
               <FileSpreadsheet style={{ width: '16px', height: '16px' }} />
-              Upload Excel Mappings
+              Upload Excel (Sales Group & Range)
             </button>
 
-            {/* Auto-Sync from Budget Master */}
+            {uploadCompareResult && (
+              <button
+                onClick={handleClearUploadCompare}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.55rem 0.85rem', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}
+                title="Clear uploaded Excel comparison"
+              >
+                <X style={{ width: '14px', height: '14px' }} />
+                Clear Uploaded
+              </button>
+            )}
+
+            {/* BUTTON: Auto-Sync Master */}
             <button
               onClick={handleAutoSync}
               className="btn btn-secondary"
@@ -287,38 +378,38 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* 5 Summary Stat Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+      {/* 5 Summary Stat Cards (Including new "Upload Not Include" Card) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
         
         {/* CARD 1: Total Sales Groups */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid var(--gsh-red)', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(200, 16, 46, 0.1)', color: 'var(--gsh-red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Layers style={{ width: '20px', height: '20px' }} />
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'rgba(200, 16, 46, 0.1)', color: 'var(--gsh-red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Layers style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
                   TOTAL SALES GROUPS
                 </span>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Unique Sales Groups</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unique Sales Groups</p>
               </div>
             </div>
 
             <button
               onClick={() => setViewModalType('sales_group')}
               title="View All Sales Groups"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.65rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
             >
-              <Eye style={{ width: '13px', height: '13px', color: 'var(--gsh-red)' }} /> View All
+              <Eye style={{ width: '14px', height: '14px', color: 'var(--gsh-red)' }} /> View All
             </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {stats.total_sales_groups || uniqueSalesGroups.length} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Groups</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              {stats.total_sales_groups || uniqueSalesGroups.length} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Groups</span>
             </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gsh-red)', background: 'rgba(200, 16, 46, 0.08)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gsh-red)', background: 'rgba(200, 16, 46, 0.08)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
               Master Table
             </span>
           </div>
@@ -328,195 +419,218 @@ const MapDivisionsPage = () => {
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid var(--gsh-teal)', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(0, 168, 150, 0.1)', color: 'var(--gsh-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Tag style={{ width: '20px', height: '20px' }} />
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'rgba(0, 168, 150, 0.1)', color: 'var(--gsh-teal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Tag style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
                   DIVISION RANGES
                 </span>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Official 45 Divisions</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Official 45 GSH Divisions</p>
               </div>
             </div>
 
             <button
               onClick={() => setViewModalType('range')}
               title="View All Ranges"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.65rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}
             >
-              <Eye style={{ width: '13px', height: '13px', color: 'var(--gsh-teal)' }} /> View All
+              <Eye style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} /> View All
             </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {stats.total_ranges || uniqueRanges.length} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Ranges</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              {stats.total_ranges || uniqueRanges.length} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Ranges</span>
             </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0, 168, 150, 0.08)', padding: '0.15rem 0.45rem', borderRadius: '4px' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0, 168, 150, 0.08)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
               Target Master
             </span>
           </div>
         </div>
 
-        {/* CARD 3: Mapped in Budget */}
+        {/* CARD 3: Mapped Count */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid #10b981', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CheckSquare style={{ width: '20px', height: '20px' }} />
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckSquare style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  MAPPED IN BUDGET
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                  MAPPED COUNT
                 </span>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Annual Budget Sales Groups</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>total_budget Sales Groups mapped</p>
               </div>
             </div>
 
-            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', padding: '0.2rem 0.45rem', borderRadius: '4px' }}>
-              ✅ Active
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+              ✅ 100% Active
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#10b981' }}>
-              {stats.mapped_count} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Mapped</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#10b981' }}>
+              {stats.mapped_count} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Mapped</span>
             </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
               From total_budget
             </span>
           </div>
         </div>
 
-        {/* CARD 4: UPLOAD NOT INCLUDED (NEW) */}
-        <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid #8b5cf6', position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileSpreadsheet style={{ width: '20px', height: '20px' }} />
-              </div>
-              <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
-                  UPLOAD NOT INCLUDED
-                </span>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Unbudgeted Upload Mappings</p>
-              </div>
-            </div>
-
-            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.12)', padding: '0.2rem 0.45rem', borderRadius: '4px' }}>
-              ⚡ Custom Upload
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#8b5cf6' }}>
-              {stats.not_in_budget_count || 0} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Groups</span>
-            </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
-              Not in Budget Master
-            </span>
-          </div>
-        </div>
-
-        {/* CARD 5: Total Items Count */}
+        {/* CARD 4: Total Items Count */}
         <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderLeft: '4px solid #3b82f6', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Package style={{ width: '20px', height: '20px' }} />
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Package style={{ width: '22px', height: '22px' }} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
                   TOTAL ITEMS COUNT
                 </span>
-                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Active Product SKUs</p>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>Mapped Product SKUs / Items</p>
               </div>
             </div>
 
-            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '0.2rem 0.45rem', borderRadius: '4px' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
               📦 Active SKUs
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {(stats.total_items || mappings.length).toLocaleString('en-US')} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              {(stats.total_items || mappings.length).toLocaleString('en-US')} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Items</span>
             </div>
-            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
-              Master + Uploads
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-subtle)' }}>
+              From total_budget items
             </span>
+          </div>
+        </div>
+
+        {/* CARD 5: 🌟 UPLOAD NOT INCLUDE (NEW CARD AS REQUESTED) */}
+        <div 
+          className="glass-card" 
+          style={{ 
+            padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', 
+            borderLeft: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '4px solid #ef4444' : '4px solid #f59e0b', 
+            background: uploadCompareResult ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.04) 0%, var(--bg-card) 100%)' : 'var(--bg-card)',
+            position: 'relative' 
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)', color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <AlertTriangle style={{ width: '22px', height: '22px' }} />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : '#f59e0b' }}>
+                  UPLOAD NOT INCLUDE
+                </span>
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {uploadCompareResult ? `From ${uploadCompareResult.file_name}` : 'Upload Excel to compare'}
+                </p>
+              </div>
+            </div>
+
+            {uploadCompareResult ? (
+              <button
+                onClick={() => setIsNotIncludedModalOpen(true)}
+                title="View All Uploaded Items Not Included in Budget"
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', 
+                  background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', 
+                  borderRadius: 'var(--radius-xs)', color: '#ef4444', fontWeight: 800, fontSize: '0.78rem', cursor: 'pointer' 
+                }}
+              >
+                <Eye style={{ width: '14px', height: '14px' }} /> View List ({uploadCompareResult.not_included_count})
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                title="Upload Excel File"
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', 
+                  background: 'var(--bg-hover)', border: '1px solid var(--border-color)', 
+                  borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' 
+                }}
+              >
+                <Upload style={{ width: '14px', height: '14px', color: '#f59e0b' }} /> Upload
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: uploadCompareResult && uploadCompareResult.not_included_count > 0 ? '#ef4444' : (uploadCompareResult ? '#10b981' : 'var(--text-muted)') }}>
+              {uploadCompareResult ? uploadCompareResult.not_included_count : '-'}{' '}
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                {uploadCompareResult ? 'Not in Budget' : 'No File Uploaded'}
+              </span>
+            </div>
+            {uploadCompareResult && (
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                {uploadCompareResult.included_count} Included
+              </span>
+            )}
           </div>
         </div>
 
       </div>
 
-      {/* Search Bar, Year Filter, Status Filter Selector & Info Bar */}
+      {/* Upload Status Tabs (Shown when an Excel file has been uploaded) */}
+      {uploadCompareResult && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-card)', padding: '0.6rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginRight: '0.5rem' }}>
+            <Filter style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
+            View Filter:
+          </span>
+          {[
+            { key: 'all', label: `All Records (${combinedTableRows.length})` },
+            { key: 'uploaded', label: `Uploaded in Excel (${uploadCompareResult.total_uploaded_rows})` },
+            { key: 'included', label: `Included in Budget (${uploadCompareResult.included_count})`, color: '#10b981' },
+            { key: 'not_included', label: `⚠️ Not Included in Budget (${uploadCompareResult.not_included_count})`, color: '#ef4444' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setFilterTab(tab.key)}
+              style={{
+                padding: '0.35rem 0.75rem',
+                borderRadius: 'var(--radius-xs)',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: filterTab === tab.key ? 'none' : '1px solid var(--border-color)',
+                background: filterTab === tab.key ? (tab.color || 'var(--gsh-teal)') : 'var(--bg-hover)',
+                color: filterTab === tab.key ? '#fff' : (tab.color || 'var(--text-main)'),
+                boxShadow: filterTab === tab.key ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Search Bar, Year Filter Selector & Info Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           {/* Search Bar */}
-          <div style={{ position: 'relative', width: '300px' }}>
+          <div style={{ position: 'relative', width: '320px' }}>
             <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
             <input
               type="text"
-              placeholder="Search Sales Group, Range, Part No, Status..."
+              placeholder="Search Sales Group, Range, Part No, Contract..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               style={{ width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.85rem', outline: 'none' }}
             />
           </div>
 
-          {/* Status Filter Buttons */}
-          <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--bg-card)', padding: '0.25rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-            <button
-              onClick={() => setStatusFilter('ALL')}
-              style={{
-                padding: '0.35rem 0.75rem',
-                borderRadius: '4px',
-                border: 'none',
-                background: statusFilter === 'ALL' ? 'var(--bg-hover)' : 'transparent',
-                color: statusFilter === 'ALL' ? 'var(--text-main)' : 'var(--text-muted)',
-                fontWeight: 800,
-                fontSize: '0.78rem',
-                cursor: 'pointer'
-              }}
-            >
-              All ({mappings.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('INCLUDED')}
-              style={{
-                padding: '0.35rem 0.75rem',
-                borderRadius: '4px',
-                border: 'none',
-                background: statusFilter === 'INCLUDED' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                color: statusFilter === 'INCLUDED' ? '#10b981' : 'var(--text-muted)',
-                fontWeight: 800,
-                fontSize: '0.78rem',
-                cursor: 'pointer'
-              }}
-            >
-              Included in Budget ({includedCount})
-            </button>
-            <button
-              onClick={() => setStatusFilter('NOT_INCLUDED')}
-              style={{
-                padding: '0.35rem 0.75rem',
-                borderRadius: '4px',
-                border: 'none',
-                background: statusFilter === 'NOT_INCLUDED' ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                color: statusFilter === 'NOT_INCLUDED' ? '#8b5cf6' : 'var(--text-muted)',
-                fontWeight: 800,
-                fontSize: '0.78rem',
-                cursor: 'pointer'
-              }}
-            >
-              Upload Not in Budget ({notIncludedCount})
-            </button>
-          </div>
-
           {/* Year Filter Selector Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-card)', padding: '0.4rem 0.75rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Year:</label>
+            <label style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>Target Year:</label>
             <select
               value={selectedYear}
               onChange={e => setSelectedYear(e.target.value)}
@@ -540,7 +654,7 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* Main Division Mappings Datatable */}
+      {/* Main Division Mappings Datatable (With Interactive IFS Matching Field & Upload Status Column) */}
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 330px)', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
@@ -551,7 +665,10 @@ const MapDivisionsPage = () => {
                 <th style={{ padding: '0.75rem 1rem' }}>Range</th>
                 <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-red)' }}>Part No.</th>
                 <th style={{ padding: '0.75rem 1rem', color: 'var(--gsh-teal)' }}>Product (SKU)</th>
-                <th style={{ padding: '0.75rem 1rem', color: '#8b5cf6', width: '160px' }}>Upload / Budget Status</th>
+                
+                {/* NEW COLUMN: Upload Status */}
+                <th style={{ padding: '0.75rem 1rem', color: '#f59e0b', minWidth: '140px' }}>Upload Status</th>
+
                 <th style={{ padding: '0.75rem 1rem', color: '#3b82f6', minWidth: '220px' }}>IFS Matching Field & Rule</th>
                 <th style={{ padding: '0.75rem 1rem', width: '160px' }}>Last Updated</th>
               </tr>
@@ -566,12 +683,12 @@ const MapDivisionsPage = () => {
               ) : paginatedMappings.length === 0 ? (
                 <tr>
                   <td colSpan="8" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No mapping records matching "{searchTerm}".
+                    No mapping records matching current filters.
                   </td>
                 </tr>
               ) : (
                 paginatedMappings.map((row) => (
-                  <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', background: row.upload_status === 'Not Included' ? 'rgba(239, 68, 68, 0.03)' : 'inherit' }}>
                     <td style={{ padding: '0.65rem 1rem', fontWeight: 800, color: 'var(--gsh-red)', fontFamily: 'monospace' }}>
                       #{row.id}
                     </td>
@@ -594,32 +711,34 @@ const MapDivisionsPage = () => {
                     </td>
 
                     {/* Product (SKU) (from total_budget) */}
-                    <td style={{ padding: '0.65rem 1rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '280px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.product_sku}>
+                    <td style={{ padding: '0.65rem 1rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '260px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.product_sku}>
                       {row.product_sku || '-'}
                     </td>
 
-                    {/* NEW COLUMN: Upload / Budget Status */}
+                    {/* NEW COLUMN CELL: Upload Status (Include / Not Include) */}
                     <td style={{ padding: '0.65rem 1rem' }}>
                       {row.upload_status === 'Included' ? (
                         <span 
-                          title="Sales Group is included in Annual Budget Master"
-                          style={{ padding: '0.25rem 0.6rem', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', fontWeight: 800, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          title="Present in Annual Budget & Division Mappings"
+                          style={{ padding: '0.2rem 0.55rem', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
                         >
-                          <CheckCircle style={{ width: '13px', height: '13px' }} />
-                          Included
+                          <CheckCircle style={{ width: '12px', height: '12px' }} /> Included
+                        </span>
+                      ) : row.upload_status === 'Not Included' ? (
+                        <span 
+                          title="Not present in Annual Budget"
+                          style={{ padding: '0.2rem 0.55rem', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', borderRadius: '4px', fontWeight: 800, fontSize: '0.75rem', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                        >
+                          <AlertTriangle style={{ width: '12px', height: '12px' }} /> Not Included
                         </span>
                       ) : (
-                        <span 
-                          title="Sales Group uploaded via Excel mapping (Not included in Annual Budget)"
-                          style={{ padding: '0.25rem 0.6rem', borderRadius: '4px', background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6', fontWeight: 800, fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: '1px solid rgba(139, 92, 246, 0.3)' }}
-                        >
-                          <AlertCircle style={{ width: '13px', height: '13px' }} />
-                          Not in Budget
+                        <span style={{ color: 'var(--text-subtle)', fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                          -
                         </span>
                       )}
                     </td>
 
-                    {/* INTERACTIVE COLUMN: IFS Matching Field */}
+                    {/* INTERACTIVE COLUMN: IFS Matching Field (Shows & Configures Oracle IFS source rule) */}
                     <td style={{ padding: '0.65rem 1rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                         {row.match_type === 'CONTRACT' ? (
@@ -645,7 +764,7 @@ const MapDivisionsPage = () => {
                             >
                               CATALOG_GROUP
                             </span>
-                            {row.part_no && row.part_no !== '-' && (
+                            {row.part_no && (
                               <span 
                                 title="Direct SKU matching via CATALOG_NO"
                                 style={{ padding: '0.2rem 0.45rem', background: 'rgba(200,16,46,0.08)', color: 'var(--gsh-red)', borderRadius: '4px', fontFamily: 'monospace', fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(200,16,46,0.2)' }}
@@ -657,35 +776,37 @@ const MapDivisionsPage = () => {
                         )}
 
                         {/* Configure/Edit Button */}
-                        <button
-                          onClick={() => openMatchingModal(row)}
-                          title="Configure IFS Matching Field & Rule"
-                          style={{
-                            padding: '0.2rem 0.45rem',
-                            background: 'var(--bg-hover)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '4px',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            transition: 'all 0.15s ease'
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.color = 'var(--text-main)';
-                            e.currentTarget.style.borderColor = 'var(--gsh-teal)';
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.color = 'var(--text-muted)';
-                            e.currentTarget.style.borderColor = 'var(--border-color)';
-                          }}
-                        >
-                          <SlidersHorizontal style={{ width: '12px', height: '12px' }} />
-                          Edit
-                        </button>
+                        {typeof row.id === 'number' && (
+                          <button
+                            onClick={() => openMatchingModal(row)}
+                            title="Configure IFS Matching Field & Rule"
+                            style={{
+                              padding: '0.2rem 0.45rem',
+                              background: 'var(--bg-hover)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '4px',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.color = 'var(--text-main)';
+                              e.currentTarget.style.borderColor = 'var(--gsh-teal)';
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.color = 'var(--text-muted)';
+                              e.currentTarget.style.borderColor = 'var(--border-color)';
+                            }}
+                          >
+                            <SlidersHorizontal style={{ width: '12px', height: '12px' }} />
+                            Edit
+                          </button>
+                        )}
                       </div>
                     </td>
 
@@ -758,10 +879,10 @@ const MapDivisionsPage = () => {
         </div>
       </div>
 
-      {/* ─── MODAL: EXCEL UPLOAD MAPPINGS (NEW) ─── */}
-      {uploadModalOpen && ReactDOM.createPortal(
+      {/* ─── MODAL 1: EXCEL UPLOAD MODAL (Sales Group & Range Comparison) ─── */}
+      {isUploadModalOpen && ReactDOM.createPortal(
         <div 
-          onClick={(e) => { if (e.target === e.currentTarget && !uploading) setUploadModalOpen(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget && !uploadingExcel) setIsUploadModalOpen(false); }}
           style={{ 
             position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
             zIndex: 999999, background: 'rgba(0, 0, 0, 0.75)', 
@@ -771,149 +892,239 @@ const MapDivisionsPage = () => {
         >
           <div 
             style={{ 
-              width: '100%', maxWidth: '580px', display: 'flex', flexDirection: 'column',
+              width: '100%', maxWidth: '540px', display: 'flex', flexDirection: 'column',
               background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
-              borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+              borderRadius: 'var(--radius-md)', padding: '1.75rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
               gap: '1.25rem'
             }}
           >
             {/* Modal Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15))', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <FileSpreadsheet style={{ width: '20px', height: '20px' }} />
+                <div style={{ width: '40px', height: '40px', borderRadius: 'var(--radius-xs)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(217, 119, 6, 0.15))', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileSpreadsheet style={{ width: '22px', height: '22px' }} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-                    Upload Excel Division Mappings
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Upload Excel & Compare Budget
                   </h3>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Upload Sales Group & Range mapping sheet for unbudgeted / custom products
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Upload Excel with <strong>Sales Group</strong> and <strong>Range</strong> columns
                   </p>
                 </div>
               </div>
               <button 
                 type="button" 
-                onClick={() => !uploading && setUploadModalOpen(false)} 
+                onClick={() => setIsUploadModalOpen(false)} 
+                disabled={uploadingExcel}
                 style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}
               >
                 ✕
               </button>
             </div>
 
-            {/* Instruction Guidelines */}
-            <div style={{ background: 'var(--bg-hover)', padding: '0.85rem 1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-              <div style={{ fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span>📋 Required Excel / CSV Columns:</span>
-                <button
-                  onClick={downloadSampleTemplate}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', background: 'transparent', border: 'none', color: 'var(--gsh-teal)', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  <Download style={{ width: '12px', height: '12px' }} /> Download Template
-                </button>
+            {/* Instruction Banner */}
+            <div style={{ padding: '0.85rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(245, 158, 11, 0.25)', fontSize: '0.8rem', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ fontWeight: 800, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Sparkles style={{ width: '15px', height: '15px' }} /> Required 2 Columns in Excel:
               </div>
-              <ul style={{ margin: '0.2rem 0 0 1rem', padding: 0, color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                <li><strong>Column 1:</strong> <code>Sales Group</code> (e.g. <em>UPL HETERO</em>, <em>HETERO</em>)</li>
-                <li><strong>Column 2:</strong> <code>Range</code> (e.g. <em>UPL HETERO</em>, <em>HETERO</em>, <em>OAKNET</em>)</li>
-              </ul>
-              <div style={{ marginTop: '0.3rem', padding: '0.4rem 0.6rem', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '4px', borderLeft: '3px solid #3b82f6', fontSize: '0.75rem', color: 'var(--text-main)' }}>
-                💡 <strong>Auto-Check:</strong> Mappings already present in the Annual Budget Master will be preserved as <em>Included in Budget</em>. Any new / unbudgeted Sales Groups will be saved as <em>Not in Budget</em> and categorized under <strong>Upload Not Included</strong>.
+              <div style={{ color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                • Column 1: <strong>Sales Group</strong> (e.g. <code>ADCOCK</code>, <code>HETERO</code>, <code>UPL HETERO</code>)<br/>
+                • Column 2: <strong>Range</strong> (e.g. <code>OAKNET</code>, <code>HETERO</code>, <code>UPL HETERO</code>)
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginTop: '0.2rem' }}>
+                ℹ️ The system will compare with <strong>upload-annual-budget</strong>. Any Sales Group not in budget will be highlighted in the <strong>"Upload Not Include"</strong> card.
               </div>
             </div>
 
-            {/* File Dropzone / Selector */}
-            <form onSubmit={handleExcelUpload} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  border: '2px dashed var(--border-color)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '1.5rem',
-                  textAlign: 'center',
-                  background: uploadFile ? 'rgba(139, 92, 246, 0.05)' : 'var(--bg-card)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  borderColor: uploadFile ? '#8b5cf6' : 'var(--border-color)'
-                }}
+            {/* File Upload Drop Area */}
+            <label 
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: '2rem 1rem', border: '2px dashed var(--border-color)', borderRadius: 'var(--radius-sm)',
+                background: selectedExcelFile ? 'rgba(0, 168, 150, 0.05)' : 'var(--bg-hover)',
+                cursor: 'pointer', transition: 'all 0.2s ease', gap: '0.5rem'
+              }}
+            >
+              <input 
+                type="file" 
+                accept=".xlsx, .xls" 
+                onChange={handleExcelFileSelect} 
+                style={{ display: 'none' }} 
+              />
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: selectedExcelFile ? 'rgba(0, 168, 150, 0.12)' : 'rgba(245, 158, 11, 0.12)', color: selectedExcelFile ? 'var(--gsh-teal)' : '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {selectedExcelFile ? <CheckCircle style={{ width: '26px', height: '26px' }} /> : <FileUp style={{ width: '26px', height: '26px' }} />}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-main)' }}>
+                  {selectedExcelFile ? selectedExcelFile.name : 'Click to select Excel (.xlsx, .xls) file'}
+                </span>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {selectedExcelFile ? `${(selectedExcelFile.size / 1024).toFixed(1)} KB — Ready to Compare` : 'Only Excel spreadsheet files are supported'}
+                </p>
+              </div>
+            </label>
+
+            {/* Modal Footer Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+              <button 
+                type="button" 
+                disabled={uploadingExcel}
+                onClick={() => setIsUploadModalOpen(false)} 
+                style={{ padding: '0.5rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
               >
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  accept=".xlsx, .xls, .csv"
-                  onChange={e => setUploadFile(e.target.files[0] || null)}
-                  style={{ display: 'none' }}
-                />
-
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: uploadFile ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-hover)', color: uploadFile ? '#8b5cf6' : 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Upload style={{ width: '22px', height: '22px' }} />
-                  </div>
-                  {uploadFile ? (
-                    <div>
-                      <div style={{ fontWeight: 800, color: '#8b5cf6', fontSize: '0.9rem' }}>{uploadFile.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(uploadFile.size / 1024).toFixed(1)} KB — Click to change file</div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.9rem' }}>Click or Drag & Drop Excel File here</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Supports .xlsx, .xls, and .csv files</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Upload Result Feedback Card */}
-              {uploadResult && (
-                <div style={{ padding: '0.85rem 1rem', borderRadius: 'var(--radius-xs)', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, color: '#10b981', fontSize: '0.85rem' }}>
-                    <CheckCircle style={{ width: '16px', height: '16px' }} />
-                    {uploadResult.message}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', fontSize: '0.78rem' }}>
-                    <div style={{ background: 'var(--bg-card)', padding: '0.4rem', borderRadius: '4px', textAlign: 'center' }}>
-                      <div style={{ color: 'var(--text-muted)' }}>Total Rows</div>
-                      <strong style={{ fontSize: '1rem', color: 'var(--text-main)' }}>{uploadResult.total_rows}</strong>
-                    </div>
-                    <div style={{ background: 'var(--bg-card)', padding: '0.4rem', borderRadius: '4px', textAlign: 'center' }}>
-                      <div style={{ color: 'var(--text-muted)' }}>Already in Budget</div>
-                      <strong style={{ fontSize: '1rem', color: '#10b981' }}>{uploadResult.in_budget_count}</strong>
-                    </div>
-                    <div style={{ background: 'var(--bg-card)', padding: '0.4rem', borderRadius: '4px', textAlign: 'center' }}>
-                      <div style={{ color: 'var(--text-muted)' }}>Added to Mappings</div>
-                      <strong style={{ fontSize: '1rem', color: '#8b5cf6' }}>{uploadResult.not_in_budget_count}</strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Modal Footer Actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                <button 
-                  type="button" 
-                  disabled={uploading}
-                  onClick={() => setUploadModalOpen(false)} 
-                  style={{ padding: '0.5rem 1.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
-                >
-                  {uploadResult ? 'Close' : 'Cancel'}
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={uploading || !uploadFile}
-                  className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.4rem', fontSize: '0.85rem', fontWeight: 800, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: 'pointer' }}
-                >
-                  {uploading ? <RefreshCw className="spin" style={{ width: '15px', height: '15px' }} /> : <Upload style={{ width: '15px', height: '15px' }} />}
-                  {uploading ? 'Processing...' : 'Upload & Map'}
-                </button>
-              </div>
-            </form>
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                disabled={uploadingExcel || !selectedExcelFile}
+                onClick={handleExcelUploadSubmit}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.4rem', fontSize: '0.85rem', fontWeight: 800, background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: selectedExcelFile ? 'pointer' : 'not-allowed', opacity: selectedExcelFile ? 1 : 0.6 }}
+              >
+                {uploadingExcel ? <RefreshCw className="spin" style={{ width: '15px', height: '15px' }} /> : <Upload style={{ width: '15px', height: '15px' }} />}
+                {uploadingExcel ? 'Parsing & Comparing...' : 'Compare Excel Data'}
+              </button>
+            </div>
 
           </div>
         </div>,
         document.body
       )}
 
-      {/* ─── MODAL: CONFIGURE IFS MATCHING FIELD & CONTRACT ─── */}
+      {/* ─── MODAL 2: "UPLOAD NOT INCLUDE" INSPECT MODAL ─── */}
+      {isNotIncludedModalOpen && uploadCompareResult && ReactDOM.createPortal(
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget && !savingUnmapped) setIsNotIncludedModalOpen(false); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+            zIndex: 999999, background: 'rgba(0, 0, 0, 0.75)', 
+            backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', padding: '1rem', boxSizing: 'border-box'
+          }}
+        >
+          <div 
+            style={{ 
+              width: '100%', maxWidth: '680px', maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+              background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color)', 
+              borderRadius: 'var(--radius-md)', padding: '1.5rem', boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+              gap: '1rem'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: 'var(--radius-xs)', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle style={{ width: '20px', height: '20px' }} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Uploaded Items Not in Annual Budget ({uploadCompareResult.not_included_count})
+                  </h3>
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    These Sales Groups exist in <strong>{uploadCompareResult.file_name}</strong> but are missing from <strong>Annual Budget</strong>.
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setIsNotIncludedModalOpen(false)} 
+                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Search filter in modal */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: 'var(--text-subtle)' }} />
+                <input
+                  type="text"
+                  placeholder="Filter missing Sales Group or Range..."
+                  value={notIncludedSearch}
+                  onChange={e => setNotIncludedSearch(e.target.value)}
+                  style={{ width: '100%', padding: '0.45rem 0.65rem 0.45rem 2.2rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            {/* List Table */}
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', maxHeight: '42vh' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)' }}>
+                  <tr style={{ color: 'var(--text-main)', fontWeight: 800 }}>
+                    <th style={{ padding: '0.6rem 0.75rem', width: '40px' }}>#</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Sales Group</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>Target Range</th>
+                    <th style={{ padding: '0.6rem 0.75rem', color: '#ef4444' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploadCompareResult.not_included_items
+                    .filter(item => {
+                      if (!notIncludedSearch.trim()) return true;
+                      const s = notIncludedSearch.toLowerCase();
+                      return (item.sales_group && item.sales_group.toLowerCase().includes(s)) ||
+                             (item.range_name && item.range_name.toLowerCase().includes(s));
+                    })
+                    .map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '0.55rem 0.75rem', color: 'var(--text-subtle)', fontFamily: 'monospace' }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: '0.55rem 0.75rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                          {item.sales_group}
+                        </td>
+                        <td style={{ padding: '0.55rem 0.75rem' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.08)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+                            {item.range_name}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.55rem 0.75rem' }}>
+                          <span style={{ padding: '0.15rem 0.45rem', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', borderRadius: '4px', fontWeight: 800, fontSize: '0.72rem' }}>
+                            Not in Budget
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer with One-Click Save option */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Total: <strong>{uploadCompareResult.not_included_count}</strong> unbudgeted items
+              </div>
+              <div style={{ display: 'flex', gap: '0.6rem' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setIsNotIncludedModalOpen(false)} 
+                  style={{ padding: '0.45rem 1rem', background: 'var(--bg-hover)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontWeight: 700, fontSize: '0.825rem', cursor: 'pointer' }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={savingUnmapped || uploadCompareResult.not_included_count === 0}
+                  onClick={handleSaveAllUnmapped}
+                  className="btn btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 1.1rem', fontSize: '0.825rem', fontWeight: 800, background: 'var(--gsh-teal)', border: 'none', borderRadius: 'var(--radius-xs)', color: '#fff', cursor: 'pointer' }}
+                  title="Save these missing sales groups to Division Mappings table"
+                >
+                  {savingUnmapped ? <RefreshCw className="spin" style={{ width: '14px', height: '14px' }} /> : <PlusCircle style={{ width: '14px', height: '14px' }} />}
+                  {savingUnmapped ? 'Saving...' : 'Add All to Division Mappings'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── MODAL 3: CONFIGURE IFS MATCHING FIELD & CONTRACT ─── */}
       {editMatchingRow && ReactDOM.createPortal(
         <div 
           onClick={(e) => { if (e.target === e.currentTarget && !savingMatching) setEditMatchingRow(null); }}
@@ -939,45 +1150,28 @@ const MapDivisionsPage = () => {
                   <SlidersHorizontal style={{ width: '18px', height: '18px' }} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-                    Configure IFS Matching Field
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Configure IFS Matching Rule
                   </h3>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Set matching source for <strong>{editMatchingRow.sales_group}</strong> → <strong>{editMatchingRow.range_name}</strong>
+                  <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Target: <strong>{editMatchingRow.sales_group}</strong> → Range: <strong>{editMatchingRow.range_name}</strong>
                   </p>
                 </div>
               </div>
               <button 
                 type="button" 
-                onClick={() => !savingMatching && setEditMatchingRow(null)} 
+                onClick={() => setEditMatchingRow(null)} 
+                disabled={savingMatching}
                 style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-subtle)' }}
               >
                 ✕
               </button>
             </div>
 
-            {/* Target Information Card */}
-            <div style={{ background: 'var(--bg-hover)', padding: '0.75rem 1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.8rem' }}>
-              <div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Sales Group:</span>
-                <div style={{ fontWeight: 800, color: 'var(--text-main)' }}>{editMatchingRow.sales_group}</div>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Target Range:</span>
-                <div style={{ fontWeight: 800, color: 'var(--gsh-teal)' }}>{editMatchingRow.range_name}</div>
-              </div>
-              {editMatchingRow.part_no && editMatchingRow.part_no !== '-' && (
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border-color)', paddingTop: '0.4rem', marginTop: '0.2rem' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Part No / SKU: </span>
-                  <strong style={{ color: 'var(--gsh-red)' }}>{editMatchingRow.part_no}</strong> — {editMatchingRow.product_sku}
-                </div>
-              )}
-            </div>
-
-            {/* Select Matching Mode */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {/* Matching Rule Selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               <label style={{ fontSize: '0.825rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                Select IFS Matching Method:
+                Select Oracle IFS Extraction Field:
               </label>
 
               {/* Option 1: CATALOG_GROUP (Default) */}
@@ -1002,12 +1196,12 @@ const MapDivisionsPage = () => {
                     CATALOG_GROUP (Standard Sales Group Matching)
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                    Matches invoices & backlog based on IFS Column T/R (<code>CATALOG_GROUP = '{editMatchingRow.sales_group}'</code>).
+                    Pulls all IFS Invoices and Outstanding Orders where <code>CATALOG_GROUP = '{editMatchingRow.sales_group}'</code>.
                   </div>
                 </div>
               </label>
 
-              {/* Option 2: CONTRACT (Contract Wide Matching) */}
+              {/* Option 2: CONTRACT (Contract Code Matching) */}
               <label 
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem',
@@ -1025,16 +1219,16 @@ const MapDivisionsPage = () => {
                   style={{ marginTop: '0.2rem', accentColor: '#8b5cf6' }}
                 />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#8b5cf6' }}>
-                    CONTRACT (Match All Volume from an IFS Contract)
+                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Building2 style={{ width: '14px', height: '14px' }} />
+                    CONTRACT (Match All Records by IFS Contract Code)
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                    Maps all invoices & backlog having a specific IFS Site/Contract Code directly to this Range.
+                    Extracts <strong>ALL</strong> invoices & backlog lines matching this IFS Contract site.
                   </div>
 
-                  {/* Contract Code Selector */}
                   {matchingForm.match_type === 'CONTRACT' && (
-                    <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                       <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>
                         Select or Enter IFS Contract Code:
                       </label>
@@ -1092,7 +1286,7 @@ const MapDivisionsPage = () => {
                     CATALOG_NO (Direct Part No / SKU Match)
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                    Matches directly by IFS Catalog No (<code>CATALOG_NO = '{editMatchingRow.part_no && editMatchingRow.part_no !== '-' ? editMatchingRow.part_no : 'SKU'}'</code>).
+                    Matches directly by IFS Catalog No (<code>CATALOG_NO = '{editMatchingRow.part_no || 'SKU'}'</code>).
                   </div>
                 </div>
               </label>
@@ -1125,7 +1319,7 @@ const MapDivisionsPage = () => {
         document.body
       )}
 
-      {/* ─── MODAL: VIEW ALL (Sales Groups or Ranges) ─── */}
+      {/* ─── MODAL 4: VIEW ALL (Sales Groups or Ranges) ─── */}
       {viewModalType && ReactDOM.createPortal(
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setViewModalType(null); }}

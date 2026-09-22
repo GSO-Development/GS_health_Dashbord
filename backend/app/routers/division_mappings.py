@@ -1,5 +1,7 @@
+import io
+import pandas as pd
 from typing import Optional, List, Dict
-from fastapi import APIRouter, HTTPException, Query, Body, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile
 from app.core.database import get_db_connection
 
 router = APIRouter(prefix="/api/division-mappings", tags=["Division Mappings"])
@@ -119,26 +121,10 @@ def init_division_mappings_table():
                 range_name VARCHAR(150) NOT NULL,
                 match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP',
                 contract_code VARCHAR(50) DEFAULT NULL,
-                is_uploaded TINYINT(1) DEFAULT 0,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY uk_sales_group_only (sales_group)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
-
-        try:
-            cursor.execute("ALTER TABLE division_mappings ADD COLUMN is_uploaded TINYINT(1) DEFAULT 0;")
-        except Exception:
-            pass
-
-        try:
-            cursor.execute("ALTER TABLE division_mappings ADD COLUMN match_type VARCHAR(50) DEFAULT 'CATALOG_GROUP';")
-        except Exception:
-            pass
-
-        try:
-            cursor.execute("ALTER TABLE division_mappings ADD COLUMN contract_code VARCHAR(50) DEFAULT NULL;")
-        except Exception:
-            pass
 
         cursor.execute("SELECT COUNT(*) as cnt FROM division_mappings;")
         count = cursor.fetchone()["cnt"]
@@ -266,19 +252,6 @@ def get_mapping_stats():
         cursor.execute("SELECT COUNT(*) as cnt FROM total_budget;")
         total_items_cnt = cursor.fetchone()['cnt'] or 0
 
-        # Upload Not Included count (Sales Groups in division_mappings not in total_budget)
-        cursor.execute("""
-            SELECT COUNT(DISTINCT m.sales_group) as not_in_budget_cnt
-            FROM division_mappings m
-            WHERE LOWER(TRIM(m.sales_group)) NOT IN (
-                SELECT DISTINCT LOWER(TRIM(sales_group)) 
-                FROM total_budget 
-                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
-            ) AND m.sales_group != '(blank)';
-        """)
-        nib_row = cursor.fetchone()
-        not_in_budget_cnt = nib_row['not_in_budget_cnt'] or 0
-
         # Unmapped Sales Groups list
         cursor.execute("""
             SELECT DISTINCT TRIM(b.sales_group) as unmapped_sg, TRIM(b.range_name) as target_range
@@ -295,8 +268,7 @@ def get_mapping_stats():
         "total_ranges": div_range_count,
         "mapped_count": mapped_cnt,
         "unmapped_count": unmapped_cnt,
-        "not_in_budget_count": not_in_budget_cnt,
-        "total_items": total_items_cnt + not_in_budget_cnt,
+        "total_items": total_items_cnt,
         "unmapped_list": unmapped_list
     }
 
@@ -333,135 +305,25 @@ def sync_mappings_from_budget():
     }
 
 
-@router.post("/upload-excel")
-async def upload_excel_mappings(file: UploadFile = File(...)):
-    import pandas as pd
-    import io
-
-    init_division_mappings_table()
-    
-    filename = file.filename or ""
-    if not filename.lower().endswith(('.xlsx', '.xls', '.csv')):
-        raise HTTPException(status_code=400, detail="Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV file.")
-        
-    content = await file.read()
-    try:
-        if filename.lower().endswith('.csv'):
-            df = pd.read_csv(io.BytesIO(content))
-        else:
-            df = pd.read_excel(io.BytesIO(content))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
-
-    if df.empty:
-        raise HTTPException(status_code=400, detail="The uploaded Excel file is empty.")
-
-    # Detect Sales Group and Range columns
-    sg_col = None
-    range_col = None
-
-    for col in df.columns:
-        c_clean = str(col).strip().lower().replace('_', ' ').replace('-', ' ')
-        if c_clean in ['sales group', 'salesgroup', 'group', 's grp', 'catalog group', 'cataloggroup']:
-            sg_col = col
-            break
-    if not sg_col:
-        for col in df.columns:
-            c_clean = str(col).strip().lower()
-            if 'sales' in c_clean or 'group' in c_clean:
-                sg_col = col
-                break
-
-    for col in df.columns:
-        c_clean = str(col).strip().lower().replace('_', ' ').replace('-', ' ')
-        if c_clean in ['range', 'range name', 'rangename', 'division', 'division name', 'parent division', 'parent range']:
-            range_col = col
-            break
-    if not range_col:
-        for col in df.columns:
-            c_clean = str(col).strip().lower()
-            if 'range' in c_clean or 'div' in c_clean:
-                range_col = col
-                break
-
-    if not sg_col or not range_col:
-        if len(df.columns) >= 2:
-            sg_col = df.columns[0]
-            range_col = df.columns[1]
-        else:
-            raise HTTPException(status_code=400, detail=f"Could not identify 'Sales Group' and 'Range' columns. Detected columns: {list(df.columns)}")
-
-    conn = get_db_connection()
-    in_budget_count = 0
-    not_in_budget_count = 0
-    not_in_budget_items = []
-    in_budget_items = []
-    total_valid_rows = 0
-
-    try:
-        with conn.cursor() as cursor:
-            # Fetch all distinct sales groups in total_budget
-            cursor.execute("SELECT DISTINCT LOWER(TRIM(sales_group)) as sg FROM total_budget WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';")
-            budget_sgs = {r['sg'] for r in cursor.fetchall() if r.get('sg')}
-
-            for _, row in df.iterrows():
-                val_sg = row[sg_col]
-                val_rn = row[range_col]
-
-                if pd.isna(val_sg) or pd.isna(val_rn):
-                    continue
-
-                sg_str = str(val_sg).strip()
-                rn_str = str(val_rn).strip()
-
-                if not sg_str or not rn_str or sg_str.lower() in ['nan', 'none', 'null', ''] or rn_str.lower() in ['nan', 'none', 'null', '']:
-                    continue
-
-                total_valid_rows += 1
-                sg_key = sg_str.lower()
-
-                if sg_key in budget_sgs:
-                    in_budget_count += 1
-                    in_budget_items.append({'sales_group': sg_str, 'range_name': rn_str})
-                    cursor.execute("""
-                        INSERT INTO division_mappings (sales_group, range_name, match_type, is_uploaded)
-                        VALUES (%s, %s, 'CATALOG_GROUP', 0)
-                        ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
-                    """, (sg_str, rn_str))
-                else:
-                    not_in_budget_count += 1
-                    not_in_budget_items.append({'sales_group': sg_str, 'range_name': rn_str})
-                    cursor.execute("""
-                        INSERT INTO division_mappings (sales_group, range_name, match_type, is_uploaded)
-                        VALUES (%s, %s, 'CATALOG_GROUP', 1)
-                        ON DUPLICATE KEY UPDATE range_name = VALUES(range_name), is_uploaded = 1;
-                    """, (sg_str, rn_str))
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {
-        "status": "success",
-        "message": f"Excel Upload Complete: {not_in_budget_count} unbudgeted groups added to mappings, {in_budget_count} existing budget groups recognized.",
-        "total_rows": total_valid_rows,
-        "in_budget_count": in_budget_count,
-        "not_in_budget_count": not_in_budget_count,
-        "not_in_budget_items": not_in_budget_items[:50],
-        "in_budget_items": in_budget_items[:50]
-    }
-
-
 @router.get("")
 def list_division_mappings(
     search: Optional[str] = Query(None),
-    year: Optional[str] = Query(None),
-    upload_status: Optional[str] = Query(None)
+    year: Optional[str] = Query(None)
 ):
     init_division_mappings_table()
     conn = get_db_connection()
+    where_clauses = []
+    params = []
+
+    if search:
+        where_clauses.append("(b.sales_group LIKE %s OR b.range_name LIKE %s OR b.part_no LIKE %s OR b.product_sku LIKE %s OR m.range_name LIKE %s OR m.contract_code LIKE %s)")
+        like_str = f"%{search}%"
+        params.extend([like_str, like_str, like_str, like_str, like_str, like_str])
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     with conn.cursor() as cursor:
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT 
                 b.id as budget_id,
                 b.id as id,
@@ -472,55 +334,15 @@ def list_division_mappings(
                 TRIM(COALESCE(b.product_sku, '')) as product_sku,
                 COALESCE(m.match_type, 'CATALOG_GROUP') as match_type,
                 m.contract_code as contract_code,
-                'Included' as upload_status,
-                DATE_FORMAT(COALESCE(m.updated_at, NOW()), '%Y-%m-%d %H:%i') as updated_at
+                DATE_FORMAT(COALESCE(m.updated_at, NOW()), '%%Y-%%m-%%d %%H:%%i') as updated_at
             FROM total_budget b
             LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
-            
-            UNION ALL
-            
-            SELECT 
-                0 as budget_id,
-                m.id + 1000000 as id,
-                m.id as mapping_id,
-                TRIM(m.sales_group) as sales_group,
-                TRIM(m.range_name) as range_name,
-                '-' as part_no,
-                'Uploaded Mapping (Not in Budget)' as product_sku,
-                COALESCE(m.match_type, 'CATALOG_GROUP') as match_type,
-                m.contract_code as contract_code,
-                'Not Included' as upload_status,
-                DATE_FORMAT(COALESCE(m.updated_at, NOW()), '%Y-%m-%d %H:%i') as updated_at
-            FROM division_mappings m
-            WHERE LOWER(TRIM(m.sales_group)) NOT IN (
-                SELECT DISTINCT LOWER(TRIM(sales_group)) 
-                FROM total_budget 
-                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != ''
-            ) AND m.sales_group != '(blank)'
-            ORDER BY id ASC;
-        """)
-        all_rows = cursor.fetchall()
+            {where_sql}
+            ORDER BY b.id ASC;
+        """, params)
+        rows = cursor.fetchall()
     conn.close()
-
-    if upload_status:
-        st_filter = upload_status.lower().strip()
-        all_rows = [r for r in all_rows if (r.get('upload_status') or '').lower().strip() == st_filter]
-
-    if search:
-        st = search.lower().strip()
-        all_rows = [
-            r for r in all_rows if (
-                st in (r.get('sales_group') or '').lower() or
-                st in (r.get('range_name') or '').lower() or
-                st in (r.get('part_no') or '').lower() or
-                st in (r.get('product_sku') or '').lower() or
-                st in (r.get('contract_code') or '').lower() or
-                st in (r.get('upload_status') or '').lower() or
-                st in str(r.get('id') or '')
-            )
-        ]
-
-    return {"status": "success", "total": len(all_rows), "data": all_rows}
+    return {"status": "success", "total": len(rows), "data": rows}
 
 
 @router.post("")
@@ -827,3 +649,211 @@ def delete_division_mapping(mapping_id: int):
         cursor.execute("DELETE FROM division_mappings WHERE id = %s;", (mapping_id,))
     conn.close()
     return {"status": "success", "message": f"Mapping ID {mapping_id} deleted."}
+
+
+@router.post("/compare-excel")
+async def compare_excel_mappings(
+    file: UploadFile = File(...),
+    year: Optional[str] = Query(None)
+):
+    """
+    Accepts an Excel file with 2 columns: Sales Group and Range.
+    Compares the uploaded Sales Groups and Ranges against existing total_budget and division_mappings.
+    Classifies each uploaded record as 'Included' (already in budget / mapped) or 'Not Included' (not in budget).
+    Returns total summary, counts, not included list, and all compared items.
+    """
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="Invalid file type. Please upload an Excel (.xlsx or .xls) file.")
+
+    try:
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read Excel file: {str(e)}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="The uploaded Excel file is empty.")
+
+    # Identify columns
+    cols = [str(c).strip() for c in df.columns]
+    sg_col_idx = None
+    rn_col_idx = None
+
+    sg_candidates = ['sales group', 'sales_group', 'salesgroup', 'catalog group', 'catalog_group', 'cataloggroup', 'group', 'sg', 'sales grp']
+    rn_candidates = ['range', 'range name', 'range_name', 'rangename', 'division', 'division name', 'division_name', 'parent division', 'parent range']
+
+    for idx, col_name in enumerate(cols):
+        clean_name = col_name.lower().replace('_', ' ').strip()
+        if any(c == clean_name or c == col_name.lower() for c in sg_candidates) and sg_col_idx is None:
+            sg_col_idx = idx
+        elif any(c == clean_name or c == col_name.lower() for c in rn_candidates) and rn_col_idx is None:
+            rn_col_idx = idx
+
+    # If not identified by name, default to col 0 = Sales Group, col 1 = Range
+    if sg_col_idx is None:
+        sg_col_idx = 0
+    if rn_col_idx is None:
+        rn_col_idx = 1 if len(cols) > 1 else 0
+
+    uploaded_rows = []
+    seen_pairs = set()
+
+    for row_idx, row in df.iterrows():
+        sg_val = str(row.iloc[sg_col_idx]).strip() if pd.notna(row.iloc[sg_col_idx]) else ""
+        rn_val = str(row.iloc[rn_col_idx]).strip() if pd.notna(row.iloc[rn_col_idx]) else ""
+        
+        # Clean string "nan", "None", etc.
+        if sg_val.lower() in ["nan", "none", "null", ""]:
+            sg_val = ""
+        if rn_val.lower() in ["nan", "none", "null", ""]:
+            rn_val = ""
+
+        if not sg_val and not rn_val:
+            continue
+
+        pair_key = (sg_val.lower(), rn_val.lower())
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+
+        uploaded_rows.append({
+            "row_num": row_idx + 2,
+            "sales_group": sg_val,
+            "range_name": rn_val
+        })
+
+    if not uploaded_rows:
+        raise HTTPException(status_code=400, detail="No valid Sales Group or Range rows found in the uploaded file.")
+
+    # Query existing database records
+    init_division_mappings_table()
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. Total budget sales groups and ranges
+            if year and year.lower() not in ["all fiscal years", "all", ""]:
+                cursor.execute("""
+                    SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn 
+                    FROM total_budget 
+                    WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '' 
+                      AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '');
+                """, (year,))
+            else:
+                cursor.execute("""
+                    SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn 
+                    FROM total_budget 
+                    WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
+                """)
+            budget_rows = cursor.fetchall()
+            budget_sgs = set(r['sg'] for r in budget_rows if r.get('sg'))
+            budget_sg_rn_pairs = set((r['sg'], r['rn']) for r in budget_rows if r.get('sg') and r.get('rn'))
+
+            # 2. Division mappings
+            cursor.execute("""
+                SELECT DISTINCT LOWER(TRIM(sales_group)) as sg, LOWER(TRIM(range_name)) as rn, match_type, contract_code 
+                FROM division_mappings 
+                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
+            """)
+            mapping_rows = cursor.fetchall()
+            mapped_sgs = set(r['sg'] for r in mapping_rows if r.get('sg'))
+            mapped_sg_rn_pairs = set((r['sg'], r['rn']) for r in mapping_rows if r.get('sg') and r.get('rn'))
+            sg_mapping_dict = {r['sg']: r for r in mapping_rows if r.get('sg')}
+    finally:
+        conn.close()
+
+    # Compare and classify
+    all_compared = []
+    not_included_items = []
+    included_items = []
+
+    for item in uploaded_rows:
+        sg = item["sales_group"]
+        rn = item["range_name"]
+        sg_l = sg.lower()
+        rn_l = rn.lower()
+
+        in_budget = sg_l in budget_sgs
+        in_mappings = sg_l in mapped_sgs
+        exact_budget_pair = (sg_l, rn_l) in budget_sg_rn_pairs
+        exact_mapped_pair = (sg_l, rn_l) in mapped_sg_rn_pairs
+
+        # If it exists in total_budget OR division_mappings
+        if in_budget or in_mappings:
+            status = "Included"
+            reason = "Found in Budget Master" if in_budget else "Found in Division Mappings"
+            mapping_info = sg_mapping_dict.get(sg_l, {})
+            record = {
+                "sales_group": sg,
+                "range_name": rn,
+                "status": "Included",
+                "in_budget": in_budget,
+                "in_mappings": in_mappings,
+                "reason": reason,
+                "match_type": mapping_info.get("match_type", "CATALOG_GROUP") if in_mappings else "CATALOG_GROUP",
+                "contract_code": mapping_info.get("contract_code") if in_mappings else None
+            }
+            included_items.append(record)
+            all_compared.append(record)
+        else:
+            status = "Not Included"
+            reason = "Not found in Annual Budget or Mappings"
+            record = {
+                "sales_group": sg,
+                "range_name": rn,
+                "status": "Not Included",
+                "in_budget": False,
+                "in_mappings": False,
+                "reason": reason,
+                "match_type": "CATALOG_GROUP",
+                "contract_code": None
+            }
+            not_included_items.append(record)
+            all_compared.append(record)
+
+    return {
+        "status": "success",
+        "file_name": file.filename,
+        "total_uploaded_rows": len(uploaded_rows),
+        "included_count": len(included_items),
+        "not_included_count": len(not_included_items),
+        "not_included_items": not_included_items,
+        "included_items": included_items,
+        "all_compared_items": all_compared,
+        "message": f"Excel parsed successfully: {len(included_items)} Included, {len(not_included_items)} Not Included (Missing from Budget)."
+    }
+
+
+@router.post("/bulk-save-unmapped")
+def bulk_save_unmapped_mappings(payload: dict = Body(...)):
+    """
+    Optional helper to save uploaded unmapped/not included items into division_mappings table.
+    """
+    items = payload.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="No items provided to save.")
+
+    init_division_mappings_table()
+    conn = get_db_connection()
+    saved_count = 0
+    try:
+        with conn.cursor() as cursor:
+            for item in items:
+                sg = str(item.get("sales_group") or "").strip()
+                rn = str(item.get("range_name") or "").strip()
+                if sg and rn:
+                    cursor.execute("""
+                        INSERT INTO division_mappings (sales_group, range_name, match_type, contract_code)
+                        VALUES (%s, %s, 'CATALOG_GROUP', NULL)
+                        ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
+                    """, (sg, rn))
+                    saved_count += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Successfully added {saved_count} new mappings to division_mappings table!",
+        "saved_count": saved_count
+    }
+
