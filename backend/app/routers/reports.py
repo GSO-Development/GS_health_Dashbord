@@ -370,7 +370,10 @@ def get_total_range_fy(
                     MONTH(i.invoice_date) as inv_m,
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
-                WHERE 1=1 {c_clause_i}
+                WHERE (
+                    (YEAR(i.invoice_date) = 2026 AND MONTH(i.invoice_date) >= 4) OR
+                    (YEAR(i.invoice_date) = 2027 AND MONTH(i.invoice_date) <= 3)
+                ) {c_clause_i}
                 GROUP BY s_grp, part_no, contract_code, inv_m;
             """
             if c_params:
@@ -432,7 +435,7 @@ def get_total_range_fy(
                         pk = (sg_key, pk_key, inv_m)
                         p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
 
-        # 8. Bulk fetch outstanding backlog
+        # 8. Bulk fetch outstanding backlog (Only Reserved Orders)
         if has_date_filter:
             cursor.execute(f"""
                 SELECT 
@@ -442,7 +445,8 @@ def get_total_range_fy(
                     UPPER(TRIM(COALESCE(o.contract, ''))) as contract_code,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
-                WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s {c_clause_o}
+                WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s
+                  AND UPPER(TRIM(COALESCE(o.line_state, ''))) = 'RESERVED' {c_clause_o}
                 GROUP BY s_grp, part_no, contract_code;
             """, [s_date, e_date] + c_params)
         else:
@@ -454,7 +458,7 @@ def get_total_range_fy(
                     UPPER(TRIM(COALESCE(o.contract, ''))) as contract_code,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
-                WHERE 1=1 {c_clause_o}
+                WHERE UPPER(TRIM(COALESCE(o.line_state, ''))) = 'RESERVED' {c_clause_o}
                 GROUP BY s_grp, part_no, contract_code;
             """
             if c_params:

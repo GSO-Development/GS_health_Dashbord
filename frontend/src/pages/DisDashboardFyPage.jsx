@@ -18,23 +18,33 @@ const fmtMnFull = (val) => {
   return Math.round(mn).toLocaleString('en-US') + ' M';
 };
 
-const CircularGauge = ({ percentage, variance, size = 115, activeColor = '#06b6d4', gradientId = 'disGaugeGrad' }) => {
+const fmtVariance = (varianceNum) => {
+  if (varianceNum === undefined || varianceNum === null) return '0.0 M';
+  const mn = varianceNum / 1000000;
+  const sign = mn > 0 ? '+' : '';
+  return sign + mn.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M';
+};
+
+const CircularGauge = ({ percentage = 0, varianceNum = 0, size = 115, gradientId = 'disGaugeGrad' }) => {
+  const isAchieved = (percentage >= 100) || (varianceNum >= 0);
+  const activeColor = isAchieved ? '#10b981' : '#c8102e';
+  const stopColor = isAchieved ? '#059669' : '#991b1b';
+
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const cappedPct = Math.min(percentage, 999);
   const strokeDashoffset = circumference - (Math.min(cappedPct, 100) / 100) * circumference;
 
-  const isWarning = activeColor === '#f59e0b';
-  const isNeutral = percentage === 0;
+  const formattedVariance = fmtVariance(varianceNum);
 
   return (
     <div style={{ position: 'relative', width: `${size}px`, height: `${size}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
         <defs>
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={isWarning ? '#f59e0b' : '#06b6d4'} />
-            <stop offset="100%" stopColor={isWarning ? '#d97706' : '#0891b2'} />
+            <stop offset="0%" stopColor={activeColor} />
+            <stop offset="100%" stopColor={stopColor} />
           </linearGradient>
         </defs>
         <circle
@@ -42,34 +52,41 @@ const CircularGauge = ({ percentage, variance, size = 115, activeColor = '#06b6d
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={isNeutral ? '#e2e8f0' : 'rgba(6, 182, 212, 0.15)'}
+          stroke="#e2e8f0"
           strokeWidth={strokeWidth}
-          strokeDasharray={isNeutral ? '4 4' : 'none'}
+          strokeDasharray="4 4"
         />
-        {!isNeutral && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={`url(#${gradientId})`}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-          />
-        )}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={`url(#${gradientId})`}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+        />
       </svg>
       <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <span style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-main)', letterSpacing: '-0.5px' }}>
+        <span style={{ fontSize: '1.4rem', fontWeight: 900, color: activeColor, letterSpacing: '-0.5px' }}>
           {percentage}%
         </span>
         <span style={{ fontSize: '0.62rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
           VARIANCE
         </span>
-        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: variance && variance.includes('-') ? '#c8102e' : 'var(--gsh-teal)' }}>
-          {variance}
+        <span style={{
+          fontSize: '0.75rem',
+          fontWeight: 800,
+          color: activeColor,
+          background: isAchieved ? 'rgba(16, 185, 129, 0.1)' : 'rgba(200, 16, 46, 0.1)',
+          padding: '0.1rem 0.45rem',
+          borderRadius: '8px',
+          marginTop: '2px',
+          border: `1px solid ${isAchieved ? 'rgba(16, 185, 129, 0.3)' : 'rgba(200, 16, 46, 0.3)'}`
+        }}>
+          {formattedVariance}
         </span>
       </div>
     </div>
@@ -114,10 +131,13 @@ const DisDashboardFyPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const isCurrentMonth = selectedMonth === getCurrentMonthKey();
+  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+
   const fetchDisDashboardData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, backlog_mode: backlogMode };
+      const params = { month: selectedMonth, backlog_mode: effectiveBacklogMode };
       if (startDate && endDate) {
         if (startDate === endDate) {
           params.date = startDate;
@@ -142,7 +162,7 @@ const DisDashboardFyPage = () => {
 
   useEffect(() => {
     fetchDisDashboardData();
-  }, [selectedMonth, startDate, endDate, backlogMode, selectedContracts]);
+  }, [selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
 
   const pri = data?.primary_sales || { actual: 783909774.55, target: 80800000, pct: 970, variance: 703109774.55 };
   const rd = data?.rd_sales || { actual: 22494390.46, target: 80800000, pct: 28, variance: -58305609.54 };
@@ -169,135 +189,103 @@ const DisDashboardFyPage = () => {
             Executive Overview comparing Primary Targets vs Actuals & RD Targets vs Actuals (Live MySQL Data).
           </p>
         </div>
+      </div>
 
-        {/* Right Side Control Bar: Contract Multi-Select + Admin Formula Guide Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <ContractMultiSelect
-            selectedContracts={selectedContracts}
-            onChange={setSelectedContracts}
-            disabled={loading}
-          />
+      {/* Backlog Mode Switcher (Visible ONLY for Current Month) */}
+      {isCurrentMonth && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '0.6rem 1rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              📊 Backlog Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+            </span>
+            <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
+              (Switch between Invoiced Net Sales and Pending Orders)
+            </span>
+          </div>
 
-          {isAdmin && (
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
             <button
-              onClick={() => setShowAdminFormulas(prev => !prev)}
+              onClick={() => setBacklogMode('with')}
+              disabled={loading}
               style={{
-                padding: '0.45rem 0.85rem',
+                padding: '0.4rem 0.85rem',
                 borderRadius: '6px',
-                border: showAdminFormulas ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
-                background: showAdminFormulas ? 'rgba(0,168,150,0.1)' : '#ffffff',
-                color: showAdminFormulas ? 'var(--gsh-teal)' : '#64748b',
-                fontWeight: 800,
+                border: backlogMode === 'with' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+                background: backlogMode === 'with' ? 'var(--gsh-teal)' : '#f8fafc',
+                color: backlogMode === 'with' ? '#ffffff' : '#475569',
+                fontWeight: backlogMode === 'with' ? 800 : 600,
                 fontSize: '0.75rem',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                boxShadow: showAdminFormulas ? '0 2px 8px rgba(0,168,150,0.15)' : 'none',
+                gap: '0.35rem',
+                boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
                 transition: 'all 0.15s ease'
               }}
             >
-              <ShieldCheck style={{ width: '15px', height: '15px', color: showAdminFormulas ? 'var(--gsh-teal)' : '#94a3b8' }} />
-              <span>Admin Formula Guide: <strong>{showAdminFormulas ? 'ON' : 'OFF'}</strong></span>
-              {showAdminFormulas ? <Eye style={{ width: '13px', height: '13px' }} /> : <EyeOff style={{ width: '13px', height: '13px' }} />}
+              <Layers style={{ width: '13px', height: '13px' }} />
+              Sales (Invoices + Reserved)
             </button>
-          )}
+
+            <button
+              onClick={() => setBacklogMode('without')}
+              disabled={loading}
+              style={{
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                border: backlogMode === 'without' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+                background: backlogMode === 'without' ? 'var(--gsh-teal)' : '#f8fafc',
+                color: backlogMode === 'without' ? '#ffffff' : '#475569',
+                fontWeight: backlogMode === 'without' ? 800 : 600,
+                fontSize: '0.75rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <FileCheck style={{ width: '13px', height: '13px' }} />
+              Without Backlog (Invoiced Only)
+            </button>
+
+            <button
+              onClick={() => setBacklogMode('only')}
+              disabled={loading}
+              style={{
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                border: backlogMode === 'only' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
+                background: backlogMode === 'only' ? 'var(--gsh-teal)' : '#f8fafc',
+                color: backlogMode === 'only' ? '#ffffff' : '#475569',
+                fontWeight: backlogMode === 'only' ? 800 : 600,
+                fontSize: '0.75rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Package style={{ width: '13px', height: '13px' }} />
+              Only Backlog (Reserved Only)
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* ─── Backlog Calculation Mode Switcher (Visible to Admin & User) ─── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '0.75rem',
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        padding: '0.6rem 1rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)' }}>
-            📊 Backlog Calculation Mode:
-          </span>
-          <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
-            (Switch between Invoiced Net Sales and Pending Orders)
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => setBacklogMode('with')}
-            disabled={loading}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: backlogMode === 'with' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
-              background: backlogMode === 'with' ? 'var(--gsh-teal)' : '#f8fafc',
-              color: backlogMode === 'with' ? '#ffffff' : '#475569',
-              fontWeight: backlogMode === 'with' ? 800 : 600,
-              fontSize: '0.75rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Layers style={{ width: '13px', height: '13px' }} />
-            With Backlog (Invoiced + Pending)
-          </button>
-
-          <button
-            onClick={() => setBacklogMode('without')}
-            disabled={loading}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: backlogMode === 'without' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
-              background: backlogMode === 'without' ? 'var(--gsh-teal)' : '#f8fafc',
-              color: backlogMode === 'without' ? '#ffffff' : '#475569',
-              fontWeight: backlogMode === 'without' ? 800 : 600,
-              fontSize: '0.75rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <FileCheck style={{ width: '13px', height: '13px' }} />
-            Without Backlog (Invoiced Only)
-          </button>
-
-          <button
-            onClick={() => setBacklogMode('only')}
-            disabled={loading}
-            style={{
-              padding: '0.4rem 0.85rem',
-              borderRadius: '6px',
-              border: backlogMode === 'only' ? '1.5px solid var(--gsh-teal)' : '1px solid #cbd5e1',
-              background: backlogMode === 'only' ? 'var(--gsh-teal)' : '#f8fafc',
-              color: backlogMode === 'only' ? '#ffffff' : '#475569',
-              fontWeight: backlogMode === 'only' ? 800 : 600,
-              fontSize: '0.75rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(0,168,150,0.3)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Package style={{ width: '13px', height: '13px' }} />
-            Only Backlog (Pending Orders)
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar
@@ -361,7 +349,7 @@ const DisDashboardFyPage = () => {
               </div>
             </div>
             <div style={{ flexShrink: 0 }}>
-              <CircularGauge percentage={pri.pct || 0} variance={`${fmtMn(pri.variance)}`} size={110} activeColor="#06b6d4" gradientId="disPriGrad" />
+              <CircularGauge percentage={pri.pct || 0} varianceNum={pri.variance} size={110} gradientId="disPriGrad" />
             </div>
           </div>
         </div>
@@ -405,7 +393,7 @@ const DisDashboardFyPage = () => {
               </div>
             </div>
             <div style={{ flexShrink: 0 }}>
-              <CircularGauge percentage={rd.pct || 0} variance={`${fmtMn(rd.variance)}`} size={110} activeColor={rd.pct >= 100 ? '#10b981' : '#f59e0b'} gradientId="disRdGrad" />
+              <CircularGauge percentage={rd.pct || 0} varianceNum={rd.variance} size={110} gradientId="disRdGrad" />
             </div>
           </div>
         </div>

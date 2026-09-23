@@ -36,10 +36,13 @@ const TotalRangeFyPage = () => {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const isCurrentMonth = selectedMonth === getCurrentMonthKey();
+  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+
   const loadRangeReport = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, search: searchTerm, backlog_mode: backlogMode };
+      const params = { month: selectedMonth, search: searchTerm, backlog_mode: effectiveBacklogMode };
       if (startDate && endDate) {
         if (startDate === endDate) {
           params.date = startDate;
@@ -80,7 +83,7 @@ const TotalRangeFyPage = () => {
 
   useEffect(() => {
     loadRangeReport();
-  }, [selectedMonth, startDate, endDate, searchTerm, backlogMode, selectedContracts]);
+  }, [selectedMonth, startDate, endDate, searchTerm, effectiveBacklogMode, selectedContracts]);
 
   const toggleRowExpand = (divisionName) => {
     setExpandedRows(prev => {
@@ -157,101 +160,103 @@ const TotalRangeFyPage = () => {
         </div>
       </div>
 
-      {/* ─── Backlog Calculation Mode Switcher (With / Without / Only Backlog) ─── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '0.75rem',
-        background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%)',
-        border: '1px solid rgba(226, 232, 240, 0.9)',
-        borderRadius: '12px',
-        padding: '0.65rem 1rem',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
-            Backlog Calculation Mode:
-          </span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
-            {backlogMode === 'with' && '● Invoiced + Pending Backlog'}
-            {backlogMode === 'without' && '● Invoiced Sales Only (Default)'}
-            {backlogMode === 'only' && '● Pending Backlog Orders Only'}
-          </span>
+      {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for Current Month) ─── */}
+      {isCurrentMonth && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%)',
+          border: '1px solid rgba(226, 232, 240, 0.9)',
+          borderRadius: '12px',
+          padding: '0.65rem 1rem',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
+              Backlog Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+            </span>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
+              {backlogMode === 'with' && '● Invoiced + Reserved Backlog'}
+              {backlogMode === 'without' && '● Invoiced Sales Only (Default)'}
+              {backlogMode === 'only' && '● Reserved Backlog Orders Only'}
+            </span>
+          </div>
+
+          <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '8px', padding: '3px', gap: '3px' }}>
+            <button
+              type="button"
+              onClick={() => setBacklogMode('with')}
+              style={{
+                padding: '0.35rem 0.85rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: backlogMode === 'with' ? '#10b981' : 'transparent',
+                color: backlogMode === 'with' ? '#ffffff' : '#64748b',
+                boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(16, 185, 129, 0.35)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Layers style={{ width: '13px', height: '13px' }} />
+              Sales (Invoices + Reserved)
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBacklogMode('without')}
+              style={{
+                padding: '0.35rem 0.85rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: backlogMode === 'without' ? '#6366f1' : 'transparent',
+                color: backlogMode === 'without' ? '#ffffff' : '#64748b',
+                boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(99, 102, 241, 0.35)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <CheckCircle2 style={{ width: '13px', height: '13px' }} />
+              Without Backlog (Invoiced Only)
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBacklogMode('only')}
+              style={{
+                padding: '0.35rem 0.85rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: backlogMode === 'only' ? '#f59e0b' : 'transparent',
+                color: backlogMode === 'only' ? '#ffffff' : '#64748b',
+                boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(245, 158, 11, 0.35)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Package style={{ width: '13px', height: '13px' }} />
+              Only Backlog (Reserved Only)
+            </button>
+          </div>
         </div>
-
-        <div style={{ display: 'inline-flex', background: '#e2e8f0', borderRadius: '8px', padding: '3px', gap: '3px' }}>
-          <button
-            type="button"
-            onClick={() => setBacklogMode('with')}
-            style={{
-              padding: '0.35rem 0.85rem',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '0.78rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              background: backlogMode === 'with' ? '#10b981' : 'transparent',
-              color: backlogMode === 'with' ? '#ffffff' : '#64748b',
-              boxShadow: backlogMode === 'with' ? '0 2px 6px rgba(16, 185, 129, 0.35)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Layers style={{ width: '13px', height: '13px' }} />
-            With Backlog (Invoice + Backlog)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setBacklogMode('without')}
-            style={{
-              padding: '0.35rem 0.85rem',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '0.78rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              background: backlogMode === 'without' ? '#6366f1' : 'transparent',
-              color: backlogMode === 'without' ? '#ffffff' : '#64748b',
-              boxShadow: backlogMode === 'without' ? '0 2px 6px rgba(99, 102, 241, 0.35)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <CheckCircle2 style={{ width: '13px', height: '13px' }} />
-            Without Backlog (Default)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setBacklogMode('only')}
-            style={{
-              padding: '0.35rem 0.85rem',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '0.78rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              background: backlogMode === 'only' ? '#f59e0b' : 'transparent',
-              color: backlogMode === 'only' ? '#ffffff' : '#64748b',
-              boxShadow: backlogMode === 'only' ? '0 2px 6px rgba(245, 158, 11, 0.35)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Package style={{ width: '13px', height: '13px' }} />
-            Only Backlog (Pending Orders)
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
       <MonthCalendarBar

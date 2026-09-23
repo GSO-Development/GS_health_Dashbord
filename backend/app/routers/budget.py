@@ -140,6 +140,21 @@ def update_total_budget_item(item_id: int, payload: dict = Body(...)):
     }
 
 
+def safe_float(val, default=0.0):
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if pd.isna(f) else f
+    except (ValueError, TypeError):
+        return default
+
+def safe_str(val, default=''):
+    if val is None or pd.isna(val):
+        return default
+    s = str(val).strip()
+    return default if s.lower() == 'nan' else s
+
 # Excel Upload Endpoint for Total Budget
 @router.post("/budget/upload-excel", dependencies=[Depends(require_admin)])
 async def upload_annual_budget_excel(
@@ -162,7 +177,7 @@ async def upload_annual_budget_excel(
             detail=f"Failed to read Excel file: {str(e)}"
         )
 
-    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+    df.columns = [re.sub(r'[\s_]+', '_', str(c).strip().lower()) for c in df.columns]
 
     missing_cols = [c for c in REQUIRED_TOTAL_COLS if c not in df.columns]
     if missing_cols:
@@ -201,25 +216,25 @@ async def upload_annual_budget_excel(
         grand_tot = 0.0
 
         for _, row in df.iterrows():
-            r_name = str(row.get('range_name') or '').strip()
-            s_grp = str(row.get('sales_group') or '').strip()
-            p_no = str(row.get('part_no') or '').strip()
-            p_sku = str(row.get('product_sku') or '').strip()
+            r_name = safe_str(row.get('range_name'))
+            s_grp = safe_str(row.get('sales_group'))
+            p_no = safe_str(row.get('part_no'))
+            p_sku = safe_str(row.get('product_sku'))
 
-            april = float(row.get('april') or 0.0)
-            may = float(row.get('may') or 0.0)
-            june = float(row.get('june') or 0.0)
-            july = float(row.get('july') or 0.0)
-            august = float(row.get('august') or 0.0)
-            september = float(row.get('september') or 0.0)
-            october = float(row.get('october') or 0.0)
-            november = float(row.get('november') or 0.0)
-            december = float(row.get('december') or 0.0)
-            january = float(row.get('january') or 0.0)
-            february = float(row.get('february') or 0.0)
-            march = float(row.get('march') or 0.0)
+            april = safe_float(row.get('april'))
+            may = safe_float(row.get('may'))
+            june = safe_float(row.get('june'))
+            july = safe_float(row.get('july'))
+            august = safe_float(row.get('august'))
+            september = safe_float(row.get('september'))
+            october = safe_float(row.get('october'))
+            november = safe_float(row.get('november'))
+            december = safe_float(row.get('december'))
+            january = safe_float(row.get('january'))
+            february = safe_float(row.get('february'))
+            march = safe_float(row.get('march'))
 
-            tot = float(row.get('total') or (april + may + june + july + august + september + october + november + december + january + february + march))
+            tot = safe_float(row.get('total'), default=(april + may + june + july + august + september + october + november + december + january + february + march))
             grand_tot += tot
 
             insert_data.append((
@@ -406,7 +421,28 @@ async def upload_dis_budget_excel(
             detail=f"Failed to read Excel file: {str(e)}"
         )
 
-    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+    col_mapping = {}
+    for col in df.columns:
+        c_clean = re.sub(r'[\s_]+', '_', str(col).strip().lower())
+        # Aliases
+        if c_clean in ['product_id', 'productid', 'item_code', 'itemcode', 'product_code', 'part_no']:
+            col_mapping[col] = 'product_id'
+        elif c_clean in ['product', 'product_name', 'item_name', 'description']:
+            col_mapping[col] = 'product'
+        elif c_clean in ['division_name', 'divisionname', 'division', 'div_name', 'div']:
+            col_mapping[col] = 'division_name'
+        elif c_clean in ['primary_target', 'primarytarget', 'primary_val', 'primary']:
+            col_mapping[col] = 'primary_target'
+        elif c_clean in ['rd_target', 'rdtarget', 'rd_val', 'rd']:
+            col_mapping[col] = 'rd_target'
+        elif c_clean in ['month', 'mon']:
+            col_mapping[col] = 'month'
+        elif c_clean in ['qtr', 'quarter']:
+            col_mapping[col] = 'qtr'
+        else:
+            col_mapping[col] = c_clean
+
+    df = df.rename(columns=col_mapping)
 
     missing_cols = [c for c in REQUIRED_DIS_COLS if c not in df.columns]
     if missing_cols:
@@ -449,15 +485,15 @@ async def upload_dis_budget_excel(
             raw_month = row.get('month') if 'month' in df.columns else None
             parsed_month, auto_qtr = parse_dis_budget_month(raw_month)
             
-            p_id = str(row.get('product_id') or '').strip()
-            p_name = str(row.get('product') or '').strip()
-            div_name = str(row.get('division_name') or '').strip()
+            p_id = safe_str(row.get('product_id'))
+            p_name = safe_str(row.get('product'))
+            div_name = safe_str(row.get('division_name'))
 
-            pri_tar = float(row.get('primary_target') or 0.0)
-            rd_tar = float(row.get('rd_target') or 0.0)
+            pri_tar = safe_float(row.get('primary_target'))
+            rd_tar = safe_float(row.get('rd_target'))
             
-            row_qtr = str(row.get('qtr') or '').strip() if 'qtr' in df.columns else ''
-            final_qtr = row_qtr if row_qtr and row_qtr.lower() != 'nan' else auto_qtr
+            row_qtr = safe_str(row.get('qtr')) if 'qtr' in df.columns else ''
+            final_qtr = row_qtr if row_qtr else auto_qtr
 
             tot_pri_tar += pri_tar
             tot_rd_tar += rd_tar

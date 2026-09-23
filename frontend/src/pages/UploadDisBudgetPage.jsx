@@ -121,7 +121,7 @@ const UploadDisBudgetPage = () => {
         loadDisBudgetData();
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || 'Failed to upload Dis Budget Excel sheet. Please verify column order.';
+      const errorMsg = err.response?.data?.detail || (err.response?.status === 403 ? 'Access denied. Admin permission required.' : err.message) || 'Failed to upload Dis Budget Excel sheet.';
       showToast(errorMsg, 'error');
     }
     setUploading(false);
