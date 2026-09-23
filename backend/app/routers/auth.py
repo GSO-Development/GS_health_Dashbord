@@ -164,11 +164,34 @@ def login(request: Request, payload: dict = Body(...)):
 
     if not user or not pwd_valid:
         audit_logger.warning(f"LOGIN_FAILED username={username!r} ip={client_ip}")
+        try:
+            from app.services.logger_service import log_system_activity
+            log_system_activity(
+                action_type="LOGIN",
+                description=f"Failed login attempt for '{username}'",
+                username=username or "UNKNOWN",
+                ip_address=client_ip,
+                status="FAILED"
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     # FIX-1: Create signed JWT token
     token = create_access_token(user["id"], user["role"])
     audit_logger.info(f"LOGIN_SUCCESS user_id={user['id']} username={user['username']!r} ip={client_ip}")
+    try:
+        from app.services.logger_service import log_system_activity
+        log_system_activity(
+            action_type="LOGIN",
+            description=f"User '{user['username']}' logged in successfully ({user['role']})",
+            username=user["username"],
+            user_id=user["id"],
+            ip_address=client_ip,
+            status="SUCCESS"
+        )
+    except Exception:
+        pass
 
     return {
         "success": True,

@@ -698,11 +698,20 @@ def compute_distri_range_dataset(
                 m_pri_act = m_inv_tot + (g_back if m_code == month_num else 0.0)
 
             # Monthly target from dis_budget for items in visible official ranges
-            cursor.execute("""
-                SELECT COALESCE(SUM(primary_target), 0) as tgt, COALESCE(SUM(rd_target), 0) as rd_tgt 
-                FROM dis_budget 
-                WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
-            """, (m_code, f"%-{m_code:02d}-%", m_key))
+            if official_ranges:
+                placeholders = ','.join(['%s'] * len(official_ranges))
+                cursor.execute(f"""
+                    SELECT COALESCE(SUM(primary_target), 0) as tgt, COALESCE(SUM(rd_target), 0) as rd_tgt 
+                    FROM dis_budget 
+                    WHERE (MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s)
+                      AND TRIM(division_name) IN ({placeholders});
+                """, [m_code, f"%-{m_code:02d}-%", m_key] + official_ranges)
+            else:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(primary_target), 0) as tgt, COALESCE(SUM(rd_target), 0) as rd_tgt 
+                    FROM dis_budget 
+                    WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s;
+                """, (m_code, f"%-{m_code:02d}-%", m_key))
             tgt_row = cursor.fetchone()
             m_pri_tgt = float(tgt_row['tgt'] or 0.0)
             m_rd_tgt = float(tgt_row['rd_tgt'] or 0.0)
@@ -826,17 +835,13 @@ def get_dis_dashboard_fy_overview(
     rd_pct = int(round(gt["rd_pct"]))
     rd_variance = round(rd_actual - rd_target, 2)
 
-    conn = get_db_connection()
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT COALESCE(SUM(primary_target), 0) as fy_pri_tgt, COALESCE(SUM(rd_target), 0) as fy_rd_tgt FROM dis_budget;")
-        fy_dis = cursor.fetchone()
-        fy_pri_target = float(fy_dis['fy_pri_tgt'] or 0.0)
-        fy_rd_target = float(fy_dis['fy_rd_tgt'] or 0.0)
-    conn.close()
-
-    fy_pri_actual = gt["c_pri_actual"]
+    mb = dataset.get("monthly_breakdown", [])
+    fy_pri_target = sum(m["pri_tgt"] for m in mb)
+    fy_pri_actual = sum(m["pri_act"] for m in mb)
     fy_pri_pct = int(round((fy_pri_actual / fy_pri_target) * 100)) if fy_pri_target > 0 else 0
-    fy_rd_actual = gt["c_rd_actual"]
+
+    fy_rd_target = sum(m["rd_tgt"] for m in mb)
+    fy_rd_actual = sum(m["rd_act"] for m in mb)
     fy_rd_pct = int(round((fy_rd_actual / fy_rd_target) * 100)) if fy_rd_target > 0 else 0
 
     return {

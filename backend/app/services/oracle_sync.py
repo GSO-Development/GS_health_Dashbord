@@ -283,6 +283,18 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
             order_rows = o_cursor.fetchall()
         oracle_conn.close()
 
+        unique_order_rows = []
+        seen_order_keys = set()
+        for r in order_rows:
+            try:
+                # Composite key: (order_no, line_no, rel_no, line_item_no, contract)
+                k = (str(r[2] or '').strip(), str(r[3] or '').strip(), str(r[4] or '').strip(), str(r[30] if len(r) > 30 else '' or '').strip(), str(r[11] or '').strip().upper())
+                if k not in seen_order_keys:
+                    seen_order_keys.add(k)
+                    unique_order_rows.append(r)
+            except Exception:
+                unique_order_rows.append(r)
+
         m_conn = get_db_connection()
         with m_conn.cursor() as cursor:
             if del_parts:
@@ -291,7 +303,7 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
             else:
                 cursor.execute("TRUNCATE TABLE outstanding_output;")
 
-            if order_rows:
+            if unique_order_rows:
                 ord_sql = """
                     INSERT INTO outstanding_output (
                         customer_no, customer_name, order_no, line_no, rel_no,
@@ -301,9 +313,36 @@ def sync_oracle_outstanding(oracle_user: str = None, oracle_password: str = None
                         cust_grp, catalog_group, region_code, district_code, market_code,
                         country_code, salesman_code, authorize_code, price_list_no, priority,
                         line_item_no
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        customer_no=VALUES(customer_no),
+                        customer_name=VALUES(customer_name),
+                        line_state=VALUES(line_state),
+                        agreement_id=VALUES(agreement_id),
+                        catalog_no=VALUES(catalog_no),
+                        catalog_desc=VALUES(catalog_desc),
+                        condition_code=VALUES(condition_code),
+                        condition_code_desc=VALUES(condition_code_desc),
+                        buy_qty_due=VALUES(buy_qty_due),
+                        sales_unit_meas=VALUES(sales_unit_meas),
+                        calculated_qty=VALUES(calculated_qty),
+                        price_unit_meas=VALUES(price_unit_meas),
+                        calculated_unit_price=VALUES(calculated_unit_price),
+                        planned_delivery_date=VALUES(planned_delivery_date),
+                        backlog_value_base_curr=VALUES(backlog_value_base_curr),
+                        currency_code=VALUES(currency_code),
+                        cust_grp=VALUES(cust_grp),
+                        catalog_group=VALUES(catalog_group),
+                        region_code=VALUES(region_code),
+                        district_code=VALUES(district_code),
+                        market_code=VALUES(market_code),
+                        country_code=VALUES(country_code),
+                        salesman_code=VALUES(salesman_code),
+                        authorize_code=VALUES(authorize_code),
+                        price_list_no=VALUES(price_list_no),
+                        priority=VALUES(priority);
                 """
-                cursor.executemany(ord_sql, order_rows)
+                cursor.executemany(ord_sql, unique_order_rows)
         m_conn.close()
 
     except Exception as e:

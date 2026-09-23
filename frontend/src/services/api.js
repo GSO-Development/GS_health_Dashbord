@@ -179,4 +179,15 @@ export const reseedDatabase = async () => {
   }
 };
 
+// Fetch live sync status for header
+export const fetchSyncStatus = async () => {
+  try {
+    const response = await api.get('/sync-status');
+    return response.data;
+  } catch (error) {
+    return { status: 'error', last_sync: null };
+  }
+};
+
 export default api;
+

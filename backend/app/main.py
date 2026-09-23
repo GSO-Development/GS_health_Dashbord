@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 import logging
 from collections import defaultdict
 from fastapi import FastAPI, Request, HTTPException, status
@@ -7,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.database import init_db
-from app.routers import health, reports, budget, dashboard_fy, custom_dashboard, auth, users, division_mappings, prode_ifs, oracle_sync, axienta
+from app.routers import health, reports, budget, dashboard_fy, custom_dashboard, auth, users, division_mappings, prode_ifs, oracle_sync, axienta, logs, settings
+from app.services.auto_sync_scheduler import start_auto_sync_loop
 
 # Configure logging
 logging.basicConfig(
@@ -71,10 +73,12 @@ async def security_and_rate_limit_middleware(request: Request, call_next):
     return response
 
 @app.on_event("startup")
-def startup_db():
+async def startup_db():
     init_db()
     auth.init_users_table()
     division_mappings.init_division_mappings_table()
+    # Launch background auto-sync scheduler loop
+    asyncio.create_task(start_auto_sync_loop())
 
 # Include Routers
 app.include_router(health.router)
@@ -88,6 +92,8 @@ app.include_router(division_mappings.router)
 app.include_router(prode_ifs.router)
 app.include_router(oracle_sync.router)
 app.include_router(axienta.router)
+app.include_router(logs.router)
+app.include_router(settings.router)
 
 if __name__ == "__main__":
     import uvicorn

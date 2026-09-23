@@ -157,12 +157,18 @@ def init_db():
                     price_list_no VARCHAR(100),
                     priority VARCHAR(50),
                     line_item_no VARCHAR(50),
+                    UNIQUE KEY uk_order_line_rel_item_contract (order_no, line_no, rel_no, line_item_no, contract),
                     INDEX idx_order_no (order_no),
                     INDEX idx_customer_no (customer_no),
                     INDEX idx_catalog_no (catalog_no),
                     INDEX idx_planned_delivery_date (planned_delivery_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE outstanding_output ADD UNIQUE KEY uk_order_line_rel_item_contract (order_no, line_no, rel_no, line_item_no, contract);")
+            except Exception:
+                pass
 
             # 3. Table for Total Budget
             cursor.execute("""
@@ -239,9 +245,15 @@ def init_db():
                     qty DOUBLE DEFAULT 0,
                     value DOUBLE DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_entry_date_product (entry_date, product_id),
                     INDEX idx_entry_date (entry_date)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE axienta_data ADD UNIQUE KEY uk_entry_date_product (entry_date, product_id);")
+            except Exception:
+                pass
 
             # 5b. Table for Axienta Live Sales Sync (from MS SQL 172.16.0.21)
             cursor.execute("""
@@ -276,24 +288,24 @@ def init_db():
                     team VARCHAR(100),
                     reason VARCHAR(255),
                     sales_org_name VARCHAR(255),
-                    units_per_bulk_pack DOUBLE,
-                    cases DOUBLE,
-                    units DOUBLE,
-                    total_units DOUBLE,
-                    free_cases DOUBLE,
-                    free_units DOUBLE,
-                    total_free_units DOUBLE,
-                    tonnage DOUBLE,
-                    price DOUBLE,
-                    gross_value DOUBLE,
-                    line_disc DOUBLE,
-                    additional_disc DOUBLE,
-                    net_value DOUBLE,
-                    discount DOUBLE,
-                    group_disc_part DOUBLE,
-                    addi_line_disc DOUBLE,
-                    addi_group_disc DOUBLE,
-                    company_line_disc DOUBLE,
+                    units_per_bulk_pack DOUBLE DEFAULT NULL,
+                    cases DOUBLE DEFAULT NULL,
+                    units DOUBLE DEFAULT NULL,
+                    total_units DOUBLE DEFAULT NULL,
+                    free_cases DOUBLE DEFAULT NULL,
+                    free_units DOUBLE DEFAULT NULL,
+                    total_free_units DOUBLE DEFAULT NULL,
+                    tonnage DOUBLE DEFAULT NULL,
+                    price DOUBLE DEFAULT NULL,
+                    gross_value DOUBLE DEFAULT NULL,
+                    line_disc DOUBLE DEFAULT NULL,
+                    additional_disc DOUBLE DEFAULT NULL,
+                    net_value DOUBLE DEFAULT NULL,
+                    discount DOUBLE DEFAULT NULL,
+                    group_disc_part DOUBLE DEFAULT NULL,
+                    addi_line_disc DOUBLE DEFAULT NULL,
+                    addi_group_disc DOUBLE DEFAULT NULL,
+                    company_line_disc DOUBLE DEFAULT NULL,
                     town VARCHAR(150),
                     area VARCHAR(150),
                     business_area VARCHAR(150),
@@ -307,22 +319,28 @@ def init_db():
                     payment_mode VARCHAR(100),
                     order_type VARCHAR(100),
                     submitted_date DATETIME,
-                    free_tonnage DOUBLE,
+                    free_tonnage DOUBLE DEFAULT NULL,
                     entry_number VARCHAR(100),
                     agent_id VARCHAR(100),
                     outlet_class VARCHAR(100),
                     call_id VARCHAR(100),
-                    total_discount DOUBLE,
+                    total_discount DOUBLE DEFAULT NULL,
                     sales_model VARCHAR(100),
                     invoice_ref_id VARCHAR(100),
                     outlet_status VARCHAR(50),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uk_txn_entry_item (txn_id, entry_number, item_id, serial_no),
                     INDEX idx_inv_date (inv_date),
                     INDEX idx_inv_year_month (inv_year, inv_month),
                     INDEX idx_item_id (item_id),
                     INDEX idx_distributor_id (distributor_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            try:
+                cursor.execute("ALTER TABLE axienta_sales_sync ADD UNIQUE KEY uk_txn_entry_item (txn_id, entry_number, item_id, serial_no);")
+            except Exception:
+                pass
 
             # 6. Table for Users
             cursor.execute("""
@@ -394,6 +412,50 @@ def init_db():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            # 9. Table for System Activity & Audit Logs
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_logs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT NULL,
+                    username VARCHAR(100) DEFAULT 'SYSTEM',
+                    action_type VARCHAR(50) NOT NULL,
+                    description VARCHAR(255) NOT NULL,
+                    details TEXT DEFAULT NULL,
+                    ip_address VARCHAR(50) DEFAULT NULL,
+                    status VARCHAR(20) DEFAULT 'SUCCESS',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_action_type (action_type),
+                    INDEX idx_status (status),
+                    INDEX idx_created_at (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 10. Table for System Settings (Auto-Sync Interval, etc.)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    setting_key VARCHAR(100) NOT NULL UNIQUE,
+                    setting_value TEXT NOT NULL,
+                    description VARCHAR(255) DEFAULT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    updated_by VARCHAR(100) DEFAULT 'SYSTEM'
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # Insert default system settings if not already present
+            default_settings = [
+                ("auto_sync_interval", "30m", "Auto-sync interval (10m, 30m, 1h, disabled)"),
+                ("auto_sync_services", "ifs_invoices,ifs_outstanding,axienta", "Comma-separated list of enabled sync services"),
+                ("auto_sync_mode", "current_month", "Sync data scope mode (current_month, today, full)"),
+                ("last_auto_sync_at", "", "Timestamp of the last automated sync run"),
+                ("last_auto_sync_status", "IDLE", "Status of the last automated sync run")
+            ]
+            for k, v, d in default_settings:
+                cursor.execute("""
+                    INSERT IGNORE INTO system_settings (setting_key, setting_value, description, updated_by)
+                    VALUES (%s, %s, %s, 'SYSTEM');
+                """, (k, v, d))
     finally:
         conn.close()
 

@@ -18,7 +18,9 @@ import {
   Network,
   Box,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Settings,
+  ScrollText
 } from 'lucide-react';
 
 const Sidebar = ({ mobileOpen, setMobileOpen }) => {
@@ -59,6 +61,8 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     // Admin Master Records Section
     { path: '/map-divisions', label: 'Map Divisions', sub: 'Sales Group → Range mappings', icon: Network, adminOnly: true, divider: true, sectionHeader: '🛡️ Admin Master Records' },
     { path: '/admin/users', label: 'Manage Users', sub: 'User accounts & privileges', icon: Users, adminOnly: true },
+    { path: '/admin/settings', label: 'Settings', sub: 'Auto-sync interval & system config', icon: Settings, adminOnly: true },
+    { path: '/admin/logs', label: 'System Logs', sub: 'Audit trails, logins & sync history', icon: ScrollText, adminOnly: true },
   ];
 
   // Filter items according to role

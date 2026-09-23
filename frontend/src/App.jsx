@@ -15,6 +15,8 @@ import ManageUsersPage from './pages/ManageUsersPage';
 import MapDivisionsPage from './pages/MapDivisionsPage';
 import InvoiceSyncPage from './pages/InvoiceSyncPage';
 import OutstandingSyncPage from './pages/OutstandingSyncPage';
+import SettingsPage from './pages/SettingsPage';
+import LogsPage from './pages/LogsPage';
 
 // Guard requiring user to be logged in
 const RequireAuth = ({ children }) => {
@@ -70,6 +72,8 @@ function AppRoutes() {
         <Route path="upload-axienta-data" element={<RequireAdmin><UploadAxientaDataPage /></RequireAdmin>} />
 
         <Route path="admin/users" element={<RequireAdmin><ManageUsersPage /></RequireAdmin>} />
+        <Route path="admin/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+        <Route path="admin/logs" element={<RequireAdmin><LogsPage /></RequireAdmin>} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard-fy" replace />} />

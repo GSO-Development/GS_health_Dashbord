@@ -1,5 +1,6 @@
 import io
 import re
+import time
 import calendar
 from typing import Optional
 from datetime import datetime
@@ -55,12 +56,27 @@ INSERT INTO axienta_sales_sync (
 ) VALUES (
     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-);
+)
+ON DUPLICATE KEY UPDATE
+    distributor_name=VALUES(distributor_name),
+    region=VALUES(region),
+    territory=VALUES(territory),
+    outlet=VALUES(outlet),
+    item_name=VALUES(item_name),
+    total_units=VALUES(total_units),
+    gross_value=VALUES(gross_value),
+    net_value=VALUES(net_value),
+    discount=VALUES(discount),
+    outlet_status=VALUES(outlet_status);
 """
 
 INSERT_DATA_SQL = """
 INSERT INTO axienta_data (entry_date, product_id, product, qty, value)
-VALUES (%s, %s, %s, %s, %s);
+VALUES (%s, %s, %s, %s, %s)
+ON DUPLICATE KEY UPDATE
+    product=VALUES(product),
+    qty=VALUES(qty),
+    value=VALUES(value);
 """
 
 def fetch_mssql_rows(start_date: str, end_date: str):
@@ -87,72 +103,103 @@ def fetch_mssql_rows(start_date: str, end_date: str):
         )
 
 def process_and_save_sync_data(rows, delete_year=None, delete_month=None, delete_date_str=None):
+    seen_sync_keys = set()
     sync_tuples = []
-    data_tuples = []
+    
+    # Aggregate daily product totals for axienta_data table: (entry_date, product_id) -> {product, qty, value}
+    daily_aggregates = {}
+
     for r in rows:
         inv_dt = r.get("Date")
         inv_date_str = inv_dt.strftime("%Y-%m-%d") if isinstance(inv_dt, datetime) else str(inv_dt)[:10] if inv_dt else None
         submitted_dt = r.get("SubmittedDate")
+        
+        txn_id = str(r.get("ID") or r.get("txn_id") or "").strip()
+        serial_no = str(r.get("SerialNo") or r.get("serial_no") or "").strip()
+        entry_number = str(r.get("EntryNumber") or r.get("entry_number") or "").strip()
+        item_id = str(r.get("ItemID") or r.get("item_id") or "").strip()
 
-        sync_tuples.append((
-            r.get("DistribuotrName"), r.get("DistributorID"), r.get("Region"), r.get("Territory"),
-            r.get("ID"), r.get("SerialNo"), inv_dt, r.get("Year"), r.get("Month"), r.get("Day"),
-            r.get("Outlet"), r.get("OutletID"), r.get("OutletType"), r.get("OutletGroup"),
-            r.get("ProductGroup"), r.get("SalesRepID"), r.get("Agent"), r.get("ASMName"), r.get("Route"),
-            r.get("ItemCategory01"), r.get("ItemCategory02"), r.get("ItemCategory03"),
-            r.get("ItemCategory04"), r.get("ItemCategory05"), r.get("ItemID"), r.get("Item"),
-            r.get("Team"), r.get("Reason"), r.get("SalesOrgName"),
-            r.get("UnitsPerBulk1Pack") or 0, r.get("Cases") or 0,
-            float(r.get("Units") or 0), float(r.get("TotalUnits") or 0),
-            r.get("FreeCases") or 0, float(r.get("FreeUnits") or 0),
-            float(r.get("TotalFreeUnits") or 0), float(r.get("Tonnage") or 0),
-            float(r.get("Price") or 0), float(r.get("GrossValue") or 0),
-            float(r.get("LineDisc") or 0), float(r.get("AdditionalDisc") or 0),
-            float(r.get("NetValue") or 0), float(r.get("Discount") or 0),
-            float(r.get("GroupDiscPart") or 0), float(r.get("AddiLineDisc") or 0),
-            float(r.get("AddiGroupDisc") or 0), float(r.get("CompanyLineDisc") or 0),
-            r.get("Town"), r.get("Area"), r.get("BusinessArea"), r.get("TypeTxn"),
-            r.get("LineType"), r.get("OutletBusinessType"), r.get("Type"), r.get("AgencyName"),
-            r.get("InvoiceType"), r.get("RepType"), r.get("PaymentMode"), r.get("OrderType"),
-            submitted_dt, float(r.get("FreeTonnage") or 0), r.get("EntryNumber"), r.get("AgentID"),
-            r.get("OutletClass"), r.get("CallID"), float(r.get("TotalDiscount") or 0),
-            r.get("SalesModel"), r.get("InvoiceRefId"), r.get("OutletStatus")
-        ))
+        sync_key = (txn_id, entry_number, item_id, serial_no)
+        if sync_key not in seen_sync_keys:
+            seen_sync_keys.add(sync_key)
+            sync_tuples.append((
+                r.get("DistribuotrName"), r.get("DistributorID"), r.get("Region"), r.get("Territory"),
+                txn_id, serial_no, inv_dt, r.get("Year"), r.get("Month"), r.get("Day"),
+                r.get("Outlet"), r.get("OutletID"), r.get("OutletType"), r.get("OutletGroup"),
+                r.get("ProductGroup"), r.get("SalesRepID"), r.get("Agent"), r.get("ASMName"), r.get("Route"),
+                r.get("ItemCategory01"), r.get("ItemCategory02"), r.get("ItemCategory03"),
+                r.get("ItemCategory04"), r.get("ItemCategory05"), item_id, r.get("Item"),
+                r.get("Team"), r.get("Reason"), r.get("SalesOrgName"),
+                r.get("UnitsPerBulk1Pack") or 0, r.get("Cases") or 0,
+                float(r.get("Units") or 0), float(r.get("TotalUnits") or 0),
+                r.get("FreeCases") or 0, float(r.get("FreeUnits") or 0),
+                float(r.get("TotalFreeUnits") or 0), float(r.get("Tonnage") or 0),
+                float(r.get("Price") or 0), float(r.get("GrossValue") or 0),
+                float(r.get("LineDisc") or 0), float(r.get("AdditionalDisc") or 0),
+                float(r.get("NetValue") or 0), float(r.get("Discount") or 0),
+                float(r.get("GroupDiscPart") or 0), float(r.get("AddiLineDisc") or 0),
+                float(r.get("AddiGroupDisc") or 0), float(r.get("CompanyLineDisc") or 0),
+                r.get("Town"), r.get("Area"), r.get("BusinessArea"), r.get("TypeTxn"),
+                r.get("LineType"), r.get("OutletBusinessType"), r.get("Type"), r.get("AgencyName"),
+                r.get("InvoiceType"), r.get("RepType"), r.get("PaymentMode"), r.get("OrderType"),
+                submitted_dt, float(r.get("FreeTonnage") or 0), entry_number, r.get("AgentID"),
+                r.get("OutletClass"), r.get("CallID"), float(r.get("TotalDiscount") or 0),
+                r.get("SalesModel"), r.get("InvoiceRefId"), r.get("OutletStatus")
+            ))
 
-        data_tuples.append((
-            inv_date_str,
-            r.get("ItemID") or "",
-            r.get("Item") or "",
-            float(r.get("TotalUnits") or 0),
-            float(r.get("NetValue") or 0)
-        ))
+        if inv_date_str and item_id:
+            agg_key = (inv_date_str, item_id)
+            if agg_key not in daily_aggregates:
+                daily_aggregates[agg_key] = {
+                    "product": r.get("Item") or "",
+                    "qty": 0.0,
+                    "value": 0.0
+                }
+            daily_aggregates[agg_key]["qty"] += float(r.get("TotalUnits") or 0)
+            daily_aggregates[agg_key]["value"] += float(r.get("NetValue") or 0)
 
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            if delete_date_str:
-                # Single day replacement using indexed range
-                cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_date >= %s AND inv_date <= %s;", (f"{delete_date_str} 00:00:00", f"{delete_date_str} 23:59:59"))
-                cursor.execute("DELETE FROM axienta_data WHERE entry_date = %s;", (delete_date_str,))
-            elif delete_year and delete_month:
-                # Month-level replacement
-                cursor.execute("DELETE FROM axienta_sales_sync WHERE inv_year = %s AND inv_month = %s;", (delete_year, delete_month))
-                cursor.execute("DELETE FROM axienta_data WHERE YEAR(entry_date) = %s AND MONTH(entry_date) = %s;", (delete_year, delete_month))
+    data_tuples = [
+        (date_str, pid, info["product"], info["qty"], info["value"])
+        for (date_str, pid), info in daily_aggregates.items()
+    ]
 
-            # Batch insert in chunks of 5000
-            chunk_size = 5000
-            for i in range(0, len(sync_tuples), chunk_size):
-                cursor.executemany(INSERT_SYNC_SQL, sync_tuples[i:i+chunk_size])
-                cursor.executemany(INSERT_DATA_SQL, data_tuples[i:i+chunk_size])
+    max_retries = 3
+    chunk_size = 1000
 
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database insert error: {str(e)}")
-    finally:
-        conn.close()
+    for attempt in range(max_retries):
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                for i in range(0, len(sync_tuples), chunk_size):
+                    cursor.executemany(INSERT_SYNC_SQL, sync_tuples[i:i+chunk_size])
+                    conn.commit()
+                for i in range(0, len(data_tuples), chunk_size):
+                    cursor.executemany(INSERT_DATA_SQL, data_tuples[i:i+chunk_size])
+                    conn.commit()
+            break
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if "Deadlock" in str(e) or "1213" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+                    continue
+            raise HTTPException(status_code=500, detail=f"Database insert error: {str(e)}")
+        finally:
+            conn.close()
 
     return len(sync_tuples)
+
+def sync_axienta_live_month(year: int, month: int):
+    """Sync Axienta live data for an entire month from MSSQL server."""
+    _, last_day = calendar.monthrange(year, month)
+    start_date = f"{year:04d}-{month:02d}-01 00:00:00"
+    end_date = f"{year:04d}-{month:02d}-{last_day:02d} 23:59:59"
+    rows = fetch_mssql_rows(start_date, end_date)
+    synced_count = process_and_save_sync_data(rows, delete_year=year, delete_month=month)
+    return {"status": "success", "synced_records": synced_count}
 
 def parse_axienta_number(val) -> float:
     if val is None or pd.isna(val):
