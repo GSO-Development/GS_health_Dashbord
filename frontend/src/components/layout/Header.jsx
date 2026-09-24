@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { fetchSyncStatus } from '../../services/api';
 
-const Header = ({ setMobileOpen }) => {
+const Header = ({ toggleSidebar, sidebarCollapsed, setMobileOpen }) => {
   const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [syncInfo, setSyncInfo] = useState({
@@ -42,12 +42,13 @@ const Header = ({ setMobileOpen }) => {
 
   return (
     <header className="header-container">
-      {/* Left Area - Mobile Menu Toggle */}
+      {/* Left Area - Sidebar Toggle Button */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
         <button 
-          onClick={() => setMobileOpen(prev => !prev)}
-          className="btn btn-secondary mobile-menu-toggle"
-          title="Open Menu"
+          onClick={toggleSidebar || (() => setMobileOpen?.(prev => !prev))}
+          className="btn btn-secondary sidebar-toggle-btn"
+          title={sidebarCollapsed ? "Expand Navigation Menu" : "Collapse Navigation Menu (Icons Only)"}
+          style={{ padding: '0.55rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <Menu style={{ width: '20px', height: '20px' }} />
         </button>

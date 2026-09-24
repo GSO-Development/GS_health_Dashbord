@@ -15,6 +15,7 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const [msLoading, setMsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const exchangedRef = React.useRef(false);
 
   // Check for Microsoft OAuth Callback Query Parameters in URL
   useEffect(() => {
@@ -30,8 +31,13 @@ const LoginPage = () => {
       setError('Your session has expired. Please log in again.');
     }
 
-    // FIX-9: Exchange temporary oauth_code securely via POST
-    if (oauthCode) {
+    // FIX-9: Exchange temporary oauth_code securely via POST (Strictly once per mount)
+    if (oauthCode && !exchangedRef.current) {
+      exchangedRef.current = true;
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {}
+
       setMsLoading(true);
       api.post('/auth/microsoft/exchange', { code: oauthCode })
         .then((res) => {

@@ -9,12 +9,21 @@ const Layout = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [dbHealth, setDbHealth] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     const health = await checkDatabaseHealth();
     setDbHealth(health);
     setTimeout(() => setIsRefreshing(false), 600);
+  };
+
+  const toggleSidebar = () => {
+    if (window.innerWidth <= 768) {
+      setMobileOpen(prev => !prev);
+    } else {
+      setSidebarCollapsed(prev => !prev);
+    }
   };
 
   useEffect(() => {
@@ -28,6 +37,8 @@ const Layout = () => {
       <Sidebar 
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
+        sidebarCollapsed={sidebarCollapsed}
+        setSidebarCollapsed={setSidebarCollapsed}
       />
 
       {/* Main Content */}
@@ -39,6 +50,8 @@ const Layout = () => {
           onRefresh={handleRefresh} 
           isRefreshing={isRefreshing} 
           setMobileOpen={setMobileOpen}
+          toggleSidebar={toggleSidebar}
+          sidebarCollapsed={sidebarCollapsed}
         />
 
         {/* Page Body */}

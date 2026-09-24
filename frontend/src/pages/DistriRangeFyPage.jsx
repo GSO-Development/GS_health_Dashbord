@@ -5,7 +5,18 @@ import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import api from '../services/api';
 
-const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const formatValue = (v, unitMode = 'exact') => {
+  if (v === undefined || v === null || isNaN(v)) return '0.00';
+  const num = Number(v);
+  if (unitMode === 'millions') {
+    return (num / 1000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  if (unitMode === 'lakhs') {
+    return (num / 100000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // 'exact' - exact value with 2 decimal places
+  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 const DistriRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
@@ -14,6 +25,7 @@ const DistriRangeFyPage = () => {
   const [backlogMode, setBacklogMode] = useState('with'); // default 'with' (Sales / Invoices + Reserved)
   const [selectedContracts, setSelectedContracts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [unitMode, setUnitMode] = useState('millions'); // default 'millions' (Mn) | 'exact' | 'lakhs'
   const [treeData, setTreeData] = useState([]);
   const [grandTotal, setGrandTotal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -116,15 +128,6 @@ const DistriRangeFyPage = () => {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
             Click any Division or Subgroup row to expand child items. Live Primary & RD Target/Actual metrics.
           </p>
-        </div>
-
-        {/* Contract Multi-Select */}
-        <div>
-          <ContractMultiSelect
-            selectedContracts={selectedContracts}
-            onChange={setSelectedContracts}
-            disabled={loading}
-          />
         </div>
       </div>
 
@@ -243,17 +246,130 @@ const DistriRangeFyPage = () => {
         loading={loading}
       />
 
-      {/* Search Bar */}
+      {/* Search Bar, Expand/Collapse All & Value Display Unit Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ position: 'relative', width: '340px' }}>
-          <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
-          <input
-            type="text"
-            placeholder="Search Division, Subgroup, Item Code, SKU..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
-          />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', width: '320px' }}>
+            <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
+            <input
+              type="text"
+              placeholder="Search Division, Subgroup, Item Code, SKU..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.4rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', color: 'var(--text-main)', fontSize: '0.825rem', outline: 'none' }}
+            />
+          </div>
+
+          {/* Expand All & Collapse All Buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button
+              onClick={expandAll}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-main)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Expand All Divisions and Subgroups"
+            >
+              <ChevronDown style={{ width: '14px', height: '14px', color: 'var(--gsh-teal)' }} />
+              Expand All
+            </button>
+
+            <button
+              onClick={collapseAll}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-muted)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Collapse All Rows"
+            >
+              <ChevronRight style={{ width: '14px', height: '14px' }} />
+              Collapse All
+            </button>
+          </div>
+
+          {/* Value Display Mode Switcher (Exact / Millions / Lakhs) */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '2px', gap: '2px', boxShadow: 'var(--shadow-sm)' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-subtle)', padding: '0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Unit:
+            </span>
+            <button
+              type="button"
+              onClick={() => setUnitMode('exact')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'exact' ? 'var(--gsh-red)' : 'transparent',
+                color: unitMode === 'exact' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'exact' ? '0 2px 6px rgba(200, 16, 46, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display exact amounts with decimals (Rs.)"
+            >
+              Exact (Rs.)
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnitMode('millions')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'millions' ? 'var(--gsh-teal)' : 'transparent',
+                color: unitMode === 'millions' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'millions' ? '0 2px 6px rgba(0, 168, 150, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display values divided into Millions (Mn)"
+            >
+              Millions (Mn)
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnitMode('lakhs')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'lakhs' ? '#3b82f6' : 'transparent',
+                color: unitMode === 'lakhs' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'lakhs' ? '0 2px 6px rgba(59, 130, 246, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display values divided into Lakhs (L / 100K)"
+            >
+              Lakhs (L)
+            </button>
+          </div>
         </div>
 
         <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
@@ -271,10 +387,10 @@ const DistriRangeFyPage = () => {
               <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase' }}>
                 <th colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Division</th>
                 <th colSpan="6" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(6, 182, 212, 0.08)', color: '#06b6d4' }}>
-                  Division wise Sales Update - Current Month ({selectedMonth.toUpperCase()})
+                  Division wise Sales Update - Current Month ({selectedMonth.toUpperCase()}) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="6" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.08)', color: '#3b82f6' }}>
-                  Division wise Sales Update - Cumulative (YTD)
+                  Division wise Sales Update - Cumulative (YTD) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
               </tr>
               {/* Sub-Header Row */}
@@ -374,15 +490,15 @@ const DistriRangeFyPage = () => {
                         )}
 
                         {/* Current Month */}
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{fmt(div.p_tgt)}</td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(div.p_act)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.p_tgt, unitMode)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(div.p_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.p_pct >= 100 ? 'rgba(6,182,212,0.15)' : 'rgba(239,68,68,0.15)', color: div.p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>
                             {div.p_pct}%
                           </span>
                         </td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{fmt(div.rd_tgt)}</td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(div.rd_act)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.rd_tgt, unitMode)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(div.rd_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: div.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
                             {div.rd_pct}%
@@ -390,15 +506,15 @@ const DistriRangeFyPage = () => {
                         </td>
 
                         {/* Cumulative */}
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{fmt(div.c_p_tgt)}</td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(div.c_p_act)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.c_p_tgt, unitMode)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(div.c_p_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.c_p_pct >= 100 ? 'rgba(6,182,212,0.15)' : 'rgba(239,68,68,0.15)', color: div.c_p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>
                             {div.c_p_pct}%
                           </span>
                         </td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{fmt(div.c_rd_tgt)}</td>
-                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(div.c_rd_act)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.c_rd_tgt, unitMode)}</td>
+                        <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(div.c_rd_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: div.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
                             {div.c_rd_pct}%
@@ -434,25 +550,25 @@ const DistriRangeFyPage = () => {
                               )}
 
                               {/* Current Month */}
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{fmt(sub.p_tgt)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(sub.p_act)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.p_tgt, unitMode)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(sub.p_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>
                                 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>{sub.p_pct}%</span>
                               </td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{fmt(sub.rd_tgt)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(sub.rd_act)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.rd_tgt, unitMode)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(sub.rd_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{sub.rd_pct}%</span>
                               </td>
 
                               {/* Cumulative */}
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{fmt(sub.c_p_tgt)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(sub.c_p_act)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.c_p_tgt, unitMode)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(sub.c_p_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>
                                 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.c_p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>{sub.c_p_pct}%</span>
                               </td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{fmt(sub.c_rd_tgt)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(sub.c_rd_act)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.c_rd_tgt, unitMode)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(sub.c_rd_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>
                                 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{sub.c_rd_pct}%</span>
                               </td>
@@ -472,25 +588,25 @@ const DistriRangeFyPage = () => {
                                 )}
 
                                 {/* Current Month */}
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{fmt(item.p_tgt)}</td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(item.p_act)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.p_tgt, unitMode)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(item.p_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right' }}>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>{item.p_pct}%</span>
                                 </td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{fmt(item.rd_tgt)}</td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(item.rd_act)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.rd_tgt, unitMode)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(item.rd_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{item.rd_pct}%</span>
                                 </td>
 
                                 {/* Cumulative */}
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{fmt(item.c_p_tgt)}</td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(item.c_p_act)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.c_p_tgt, unitMode)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(item.c_p_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right' }}>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.c_p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>{item.c_p_pct}%</span>
                                 </td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{fmt(item.c_rd_tgt)}</td>
-                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(item.c_rd_act)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.c_rd_tgt, unitMode)}</td>
+                                <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(item.c_rd_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right' }}>
                                   <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{item.c_rd_pct}%</span>
                                 </td>
@@ -510,19 +626,19 @@ const DistriRangeFyPage = () => {
               <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 20, background: 'var(--bg-card)', borderTop: '3px solid var(--gsh-red)', fontWeight: 800 }}>
                 <tr>
                   <td colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.75rem 0.5rem', color: 'var(--gsh-red)', fontSize: '0.85rem' }}>
-                    GRAND TOTAL SUMMARY
+                    GRAND TOTAL SUMMARY {unitMode === 'millions' ? '(in Millions)' : (unitMode === 'lakhs' ? '(in Lakhs)' : '(in Rs.)')}
                   </td>
 
                   {/* Current Month */}
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmt(grandTotal.p_tgt)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(grandTotal.p_act)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.p_tgt, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(grandTotal.p_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                     <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.p_pct >= 100 ? 'rgba(6,182,212,0.15)' : 'rgba(239,68,68,0.15)', color: grandTotal.p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>
                       {grandTotal.p_pct}%
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmt(grandTotal.rd_tgt)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(grandTotal.rd_act)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.rd_tgt, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(grandTotal.rd_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                     <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: grandTotal.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
                       {grandTotal.rd_pct}%
@@ -530,15 +646,15 @@ const DistriRangeFyPage = () => {
                   </td>
 
                   {/* Cumulative */}
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmt(grandTotal.c_p_tgt)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#06b6d4' }}>{fmt(grandTotal.c_p_act)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.c_p_tgt, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#06b6d4' }}>{formatValue(grandTotal.c_p_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                     <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.c_p_pct >= 100 ? 'rgba(6,182,212,0.15)' : 'rgba(239,68,68,0.15)', color: grandTotal.c_p_pct >= 100 ? '#06b6d4' : '#ef4444' }}>
                       {grandTotal.c_p_pct}%
                     </span>
                   </td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{fmt(grandTotal.c_rd_tgt)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{fmt(grandTotal.c_rd_act)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.c_rd_tgt, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(grandTotal.c_rd_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
                     <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: grandTotal.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
                       {grandTotal.c_rd_pct}%

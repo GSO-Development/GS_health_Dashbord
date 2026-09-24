@@ -168,10 +168,14 @@ body {
   width: 340px;
 }
 
-.mobile-menu-toggle {
-  display: none;
+.mobile-menu-toggle,
+.sidebar-toggle-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
   padding: 0.5rem;
   border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
 .mobile-close-bar {
@@ -196,7 +200,61 @@ body {
   top: 0;
   height: 100vh;
   z-index: 20;
-  transition: transform var(--transition-normal);
+  transition: width var(--transition-normal), padding var(--transition-normal), transform var(--transition-normal);
+  overflow-x: hidden;
+  flex-shrink: 0;
+}
+
+/* Collapsed Sidebar - Icons Only */
+.sidebar-container.collapsed {
+  width: 78px;
+  padding: 1.25rem 0.5rem;
+  align-items: center;
+}
+
+.sidebar-container.collapsed .sidebar-text-container,
+.sidebar-container.collapsed .sidebar-section-title,
+.sidebar-container.collapsed .sidebar-dropdown-arrow,
+.sidebar-container.collapsed .sidebar-user-details,
+.sidebar-container.collapsed .sidebar-version-footer {
+  display: none !important;
+}
+
+.sidebar-container.collapsed .sidebar-nav-link {
+  justify-content: center;
+  padding: 0.75rem 0;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
+}
+
+.sidebar-container.collapsed .sidebar-brand-container {
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 1rem;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-container.collapsed .sidebar-dropdown-wrapper {
+  padding-left: 0 !important;
+  border-left: none !important;
+  margin-left: 0 !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sidebar-container.collapsed .sidebar-user-card {
+  padding: 0.5rem;
+  justify-content: center;
+}
+
+.sidebar-container.collapsed .sidebar-logout-btn {
+  display: none !important;
 }
 
 /* Sidebar Navigation Link Styling */

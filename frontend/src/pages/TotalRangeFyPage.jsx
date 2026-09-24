@@ -6,7 +6,18 @@ import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import api from '../services/api';
 
-const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const formatValue = (v, unitMode = 'exact') => {
+  if (v === undefined || v === null || isNaN(v)) return '0.00';
+  const num = Number(v);
+  if (unitMode === 'millions') {
+    return (num / 1000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  if (unitMode === 'lakhs') {
+    return (num / 100000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // 'exact' - exact value with 2 decimal places
+  return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 const TotalRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
@@ -15,6 +26,7 @@ const TotalRangeFyPage = () => {
   const [backlogMode, setBacklogMode] = useState('with'); // default 'with' (Sales / Invoices + Reserved)
   const [selectedContracts, setSelectedContracts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [unitMode, setUnitMode] = useState('millions'); // default 'millions' (Mn) | 'exact' | 'lakhs'
   const [reportData, setReportData] = useState([]);
   const [summaryTotals, setSummaryTotals] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -129,7 +141,7 @@ const TotalRangeFyPage = () => {
 
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      
+
       {/* Toast Notification */}
       {toast && (
         <div style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 99999, padding: '0.75rem 1.25rem', borderRadius: 'var(--radius-sm)', background: toast.type === 'success' ? '#10b981' : (toast.type === 'info' ? 'var(--gsh-teal)' : '#ef4444'), color: '#fff', fontWeight: 700, fontSize: '0.85rem', boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -146,17 +158,8 @@ const TotalRangeFyPage = () => {
             Total - Range wise fy (Division Range Sales Update)
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-            Ranges created in Admin (A to Z) mapped with Monthly, Cumulative (Last 4M), and Annual Sales Updates (Values in LKR). Click Division Range for Sales Groups, click Sales Group for Product SKUs aligned with headers.
+            Click Division Range for Sales Groups, click Sales Group for Product SKUs aligned with headers.
           </p>
-        </div>
-
-        {/* Contract Multi-Select Filter */}
-        <div>
-          <ContractMultiSelect
-            selectedContracts={selectedContracts}
-            onChange={setSelectedContracts}
-            disabled={loading}
-          />
         </div>
       </div>
 
@@ -275,10 +278,10 @@ const TotalRangeFyPage = () => {
         loading={loading}
       />
 
-      {/* Search Bar, Expand/Collapse Controls & Total Ranges Count */}
+      {/* Search Bar, Expand/Collapse Controls & Value Display Unit Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', width: '340px' }}>
+          <div style={{ position: 'relative', width: '320px' }}>
             <Search style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: 'var(--text-subtle)' }} />
             <input
               type="text"
@@ -289,6 +292,7 @@ const TotalRangeFyPage = () => {
             />
           </div>
 
+          {/* Expand All / Collapse All Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <button
               onClick={expandAll}
@@ -334,6 +338,70 @@ const TotalRangeFyPage = () => {
               Collapse All
             </button>
           </div>
+
+          {/* Value Display Mode Switcher (Exact / Millions / Lakhs) */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '2px', gap: '2px', boxShadow: 'var(--shadow-sm)' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-subtle)', padding: '0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Unit:
+            </span>
+            <button
+              type="button"
+              onClick={() => setUnitMode('exact')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'exact' ? 'var(--gsh-red)' : 'transparent',
+                color: unitMode === 'exact' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'exact' ? '0 2px 6px rgba(200, 16, 46, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display exact amounts with decimals (Rs.)"
+            >
+              Exact (Rs.)
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnitMode('millions')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'millions' ? 'var(--gsh-teal)' : 'transparent',
+                color: unitMode === 'millions' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'millions' ? '0 2px 6px rgba(0, 168, 150, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display values divided into Millions (Mn)"
+            >
+              Millions (Mn)
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnitMode('lakhs')}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                background: unitMode === 'lakhs' ? '#3b82f6' : 'transparent',
+                color: unitMode === 'lakhs' ? '#ffffff' : 'var(--text-main)',
+                boxShadow: unitMode === 'lakhs' ? '0 2px 6px rgba(59, 130, 246, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Display values divided into Lakhs (L / 100K)"
+            >
+              Lakhs (L)
+            </button>
+          </div>
         </div>
 
         <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>
@@ -351,13 +419,13 @@ const TotalRangeFyPage = () => {
               <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase' }}>
                 <th colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Division</th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(16, 185, 129, 0.08)', color: '#10b981' }}>
-                  TOTAL - CURRENT MONTH DETAILS ({selectedMonth.toUpperCase()})
+                  TOTAL - CURRENT MONTH DETAILS ({selectedMonth.toUpperCase()}) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(59, 130, 246, 0.08)', color: '#3b82f6' }}>
-                  CUMULATIVE - SALES UPDATE (LAST 4 MONTHS)
+                  CUMULATIVE - SALES UPDATE (LAST 4 MONTHS) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', background: 'rgba(200, 16, 46, 0.08)', color: 'var(--gsh-red)' }}>
-                  ANNUAL - SALES UPDATE (FULL YEAR FY 2026/27)
+                  ANNUAL - SALES UPDATE (FULL YEAR FY 2026/27) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
               </tr>
               {/* Sub-Header Row */}
@@ -433,10 +501,10 @@ const TotalRangeFyPage = () => {
                   return (
                     <React.Fragment key={row.no}>
                       {/* LEVEL 1: PARENT RANGE ROW */}
-                      <tr 
+                      <tr
                         onClick={() => toggleRowExpand(row.division)}
-                        style={{ 
-                          borderBottom: '1px solid var(--border-color)', 
+                        style={{
+                          borderBottom: '1px solid var(--border-color)',
                           background: isExpanded ? '#fef2f2' : 'var(--bg-card)',
                           cursor: 'pointer',
                           transition: 'background 0.15s ease'
@@ -460,10 +528,10 @@ const TotalRangeFyPage = () => {
                             </div>
                           </td>
                         )}
-                        
+
                         {/* Monthly Details */}
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{fmt(row.m_budget)}</td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>{fmt(row.m_actual)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{formatValue(row.m_budget, unitMode)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#10b981' }}>{formatValue(row.m_actual, unitMode)}</td>
                         <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: row.cur_pct >= 100 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: row.cur_pct >= 100 ? '#10b981' : '#ef4444' }}>
                             {row.cur_pct}%
@@ -471,8 +539,8 @@ const TotalRangeFyPage = () => {
                         </td>
 
                         {/* Cumulative Details */}
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{fmt(row.c_budget)}</td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#3b82f6' }}>{fmt(row.c_actual)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{formatValue(row.c_budget, unitMode)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: '#3b82f6' }}>{formatValue(row.c_actual, unitMode)}</td>
                         <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: row.cum_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: row.cum_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
                             {row.cum_pct}%
@@ -480,8 +548,8 @@ const TotalRangeFyPage = () => {
                         </td>
 
                         {/* Annual Details */}
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{fmt(row.a_budget)}</td>
-                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--text-main)' }}>{fmt(row.a_actual)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{formatValue(row.a_budget, unitMode)}</td>
+                        <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right', fontWeight: 800, color: 'var(--text-main)' }}>{formatValue(row.a_actual, unitMode)}</td>
                         <td style={{ padding: '0.55rem 0.75rem', textAlign: 'right' }}>
                           <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: 'rgba(200,16,46,0.12)', color: 'var(--gsh-red)' }}>
                             {row.tot_pct}%
@@ -500,21 +568,21 @@ const TotalRangeFyPage = () => {
                             <React.Fragment key={sgIdx}>
                               <tr style={{ borderBottom: '1px solid var(--border-color)', background: isSgOpen ? '#f0fdfa' : '#f8fafc', fontSize: '0.78rem' }}>
                                 <td className="sticky-cell-1" style={{ padding: '0.4rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>↳</td>
-                                
+
                                 {/* SALES GROUP BADGE WITH CLICK TO DROPDOWN */}
                                 {!isDivisionHidden && (
                                   <td className="sticky-cell-2" style={{ padding: '0.45rem 0.5rem', color: 'var(--text-main)', background: isSgOpen ? '#f0fdfa' : '#f8fafc' }}>
-                                    <span 
+                                    <span
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         toggleSgExpand(sgKey);
                                       }}
-                                      style={{ 
-                                        fontWeight: 800, 
-                                        color: isSgOpen ? '#fff' : 'var(--gsh-teal)', 
-                                        background: isSgOpen ? 'var(--gsh-teal)' : 'rgba(0,168,150,0.12)', 
-                                        padding: '0.25rem 0.6rem', 
-                                        borderRadius: '4px', 
+                                      style={{
+                                        fontWeight: 800,
+                                        color: isSgOpen ? '#fff' : 'var(--gsh-teal)',
+                                        background: isSgOpen ? 'var(--gsh-teal)' : 'rgba(0,168,150,0.12)',
+                                        padding: '0.25rem 0.6rem',
+                                        borderRadius: '4px',
                                         border: '1px solid var(--gsh-teal)',
                                         cursor: 'pointer',
                                         display: 'inline-flex',
@@ -540,20 +608,20 @@ const TotalRangeFyPage = () => {
                                   </td>
                                 )}
 
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(sg.m_budget)}</td>
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{fmt(sg.m_actual)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(sg.m_budget, unitMode)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{formatValue(sg.m_actual, unitMode)}</td>
                                 <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: 700, color: sg.cur_pct >= 100 ? '#10b981' : '#ef4444' }}>{sg.cur_pct}%</span>
                                 </td>
 
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(sg.c_budget)}</td>
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{fmt(sg.c_actual)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(sg.c_budget, unitMode)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{formatValue(sg.c_actual, unitMode)}</td>
                                 <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: 700, color: sg.cum_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{sg.cum_pct}%</span>
                                 </td>
 
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(sg.a_budget)}</td>
-                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-main)' }}>{fmt(sg.a_actual)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(sg.a_budget, unitMode)}</td>
+                                <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-main)' }}>{formatValue(sg.a_actual, unitMode)}</td>
                                 <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right' }}>
                                   <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--gsh-red)' }}>{sg.tot_pct}%</span>
                                 </td>
@@ -562,12 +630,12 @@ const TotalRangeFyPage = () => {
                               {/* LEVEL 3: DIRECT TABLE ROWS FOR PRODUCT SKUs */}
                               {isSgOpen && hasProducts && (
                                 sg.products.map((p, pIdx) => (
-                                  <tr 
-                                    key={`p_${pIdx}`} 
-                                    style={{ 
-                                      borderBottom: '1px solid var(--border-color)', 
-                                      background: 'var(--bg-card)', 
-                                      fontSize: '0.75rem' 
+                                  <tr
+                                    key={`p_${pIdx}`}
+                                    style={{
+                                      borderBottom: '1px solid var(--border-color)',
+                                      background: 'var(--bg-card)',
+                                      fontSize: '0.75rem'
                                     }}
                                   >
                                     <td className="sticky-cell-1" style={{ padding: '0.35rem 0.15rem', color: 'var(--text-subtle)', textAlign: 'center', fontSize: '0.7rem', background: 'var(--bg-card)' }}>
@@ -589,22 +657,22 @@ const TotalRangeFyPage = () => {
                                     )}
 
                                     {/* Product Monthly Figures */}
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(p.m_budget)}</td>
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{fmt(p.m_actual)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(p.m_budget, unitMode)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#10b981' }}>{formatValue(p.m_actual, unitMode)}</td>
                                     <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: p.cur_pct >= 100 ? '#10b981' : '#ef4444' }}>{p.cur_pct}%</span>
                                     </td>
 
                                     {/* Product Cumulative Figures */}
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(p.c_budget)}</td>
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{fmt(p.c_actual)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(p.c_budget, unitMode)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: '#3b82f6' }}>{formatValue(p.c_actual, unitMode)}</td>
                                     <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
                                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: p.cum_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{p.cum_pct}%</span>
                                     </td>
 
                                     {/* Product Annual Figures */}
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(p.a_budget)}</td>
-                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-main)' }}>{fmt(p.a_actual)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', color: 'var(--text-muted)' }}>{formatValue(p.a_budget, unitMode)}</td>
+                                    <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-main)' }}>{formatValue(p.a_actual, unitMode)}</td>
                                     <td style={{ padding: '0.35rem 0.75rem', textAlign: 'right' }}>
                                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--gsh-red)' }}>{p.tot_pct}%</span>
                                     </td>
@@ -627,15 +695,17 @@ const TotalRangeFyPage = () => {
             {summaryTotals && (
               <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 20, background: 'var(--bg-card)', borderTop: '2.5px solid var(--gsh-red)', fontWeight: 800, fontSize: '0.85rem', boxShadow: '0 -6px 20px rgba(0,0,0,0.15)' }}>
                 <tr>
-                  <td colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.75rem 0.5rem', color: 'var(--gsh-red)' }}>GRAND TOTAL SUMMARY</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{fmt(summaryTotals.m_budget)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#10b981', background: 'var(--bg-card)' }}>{fmt(summaryTotals.m_actual)}</td>
+                  <td colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.75rem 0.5rem', color: 'var(--gsh-red)' }}>
+                    GRAND TOTAL SUMMARY {unitMode === 'millions' ? '(in Millions)' : (unitMode === 'lakhs' ? '(in Lakhs)' : '(in Rs.)')}
+                  </td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.m_budget, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#10b981', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.m_actual, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)', color: '#10b981', background: 'var(--bg-card)' }}>{summaryTotals.cur_pct}%</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{fmt(summaryTotals.c_budget)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6', background: 'var(--bg-card)' }}>{fmt(summaryTotals.c_actual)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.c_budget, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.c_actual, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)', color: '#3b82f6', background: 'var(--bg-card)' }}>{summaryTotals.cum_pct}%</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{fmt(summaryTotals.a_budget)}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{fmt(summaryTotals.a_actual)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.a_budget, unitMode)}</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', background: 'var(--bg-card)' }}>{formatValue(summaryTotals.a_actual, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', color: 'var(--gsh-red)', background: 'var(--bg-card)' }}>{summaryTotals.tot_pct}%</td>
                 </tr>
               </tfoot>

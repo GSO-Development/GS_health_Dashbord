@@ -23,7 +23,7 @@ import {
   ScrollText
 } from 'lucide-react';
 
-const Sidebar = ({ mobileOpen, setMobileOpen }) => {
+const Sidebar = ({ mobileOpen, setMobileOpen, sidebarCollapsed, setSidebarCollapsed }) => {
   const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -81,6 +81,11 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     navigate('/welcome', { replace: true });
   };
 
+  const handleBrandClick = () => {
+    navigate('/dashboard-fy');
+    if (setMobileOpen) setMobileOpen(false);
+  };
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -92,7 +97,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
       )}
 
       {/* Sidebar Drawer */}
-      <aside className={`sidebar-container ${mobileOpen ? 'mobile-open' : ''}`}>
+      <aside className={`sidebar-container ${sidebarCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
         {/* Mobile Close Button */}
         <div className="mobile-close-bar">
           <button 
@@ -103,19 +108,27 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
           </button>
         </div>
 
-        {/* Brand Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: '1.25rem',
-          padding: '0.6rem 0.8rem',
-          background: '#ffffff',
-          borderRadius: 'var(--radius-sm)',
-          border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-sm)'
-        }}>
-          <GshLogo style={{ height: '40px', width: 'auto', maxWidth: '100%' }} />
+        {/* Brand Header - Clicking navigates to Dashboard FY */}
+        <div 
+          onClick={handleBrandClick}
+          className="sidebar-brand-container"
+          title="Click to open Dashboard FY"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '1.25rem',
+            padding: sidebarCollapsed ? '0.4rem 0.2rem' : '0.6rem 0.8rem',
+            background: '#ffffff',
+            borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-sm)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            width: '100%'
+          }}
+        >
+          <GshLogo height={sidebarCollapsed ? 32 : 40} showText={!sidebarCollapsed} />
         </div>
 
         {/* Dynamic Multi-Color Divider */}
@@ -128,21 +141,27 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
         }} />
 
         {/* Navigation List (Starts at Top) */}
-        <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem', overflowY: 'auto', width: '100%' }}>
           {visibleMenuItems.map((item, index) => {
             const Icon = item.icon;
 
             if (item.isDropdown) {
               return (
-                <div key={item.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <div key={item.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', width: '100%' }}>
                   <div
-                    onClick={() => setProdIfsOpen(o => !o)}
+                    onClick={() => {
+                      if (sidebarCollapsed && setSidebarCollapsed) {
+                        setSidebarCollapsed(false);
+                      }
+                      setProdIfsOpen(o => !o);
+                    }}
                     className={`sidebar-nav-link ${isProdIfsChildActive ? 'active' : ''}`}
-                    style={{ cursor: 'pointer', justifyContent: 'space-between' }}
+                    style={{ cursor: 'pointer', justifyContent: sidebarCollapsed ? 'center' : 'space-between' }}
+                    title={item.label}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
                       <Icon className="nav-icon" style={{ width: '18px', height: '18px', flexShrink: 0 }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      <div className="sidebar-text-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                         <span style={{ fontSize: '0.85rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: '1.2' }}>
                           {item.label}
                         </span>
@@ -151,11 +170,13 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                         </span>
                       </div>
                     </div>
-                    {prodIfsOpen ? <ChevronDown style={{ width: '15px', height: '15px' }} /> : <ChevronRight style={{ width: '15px', height: '15px' }} />}
+                    <span className="sidebar-dropdown-arrow">
+                      {prodIfsOpen ? <ChevronDown style={{ width: '15px', height: '15px' }} /> : <ChevronRight style={{ width: '15px', height: '15px' }} />}
+                    </span>
                   </div>
 
                   {prodIfsOpen && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', paddingLeft: '1.25rem', borderLeft: '2px dashed var(--border-color)', marginLeft: '1rem' }}>
+                    <div className="sidebar-dropdown-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', paddingLeft: '1.25rem', borderLeft: '2px dashed var(--border-color)', marginLeft: '1rem' }}>
                       {item.children.map((child) => {
                         const ChildIcon = child.icon;
                         return (
@@ -164,10 +185,11 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                             to={child.path}
                             onClick={handleClose}
                             className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}
-                            style={{ padding: '0.45rem 0.65rem' }}
+                            style={{ padding: sidebarCollapsed ? '0.6rem 0' : '0.45rem 0.65rem' }}
+                            title={child.label}
                           >
                             <ChildIcon className="nav-icon" style={{ width: '15px', height: '15px', flexShrink: 0 }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <div className="sidebar-text-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                               <span style={{ fontSize: '0.8rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: '1.2' }}>
                                 {child.label}
                               </span>
@@ -187,7 +209,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
             return (
               <React.Fragment key={item.path}>
                 {item.divider && index !== 0 && (
-                  <div style={{
+                  <div className="sidebar-section-title" style={{
                     margin: '0.75rem 0 0.5rem 0',
                     borderTop: '1px solid var(--border-color)',
                     paddingTop: '0.5rem'
@@ -209,9 +231,10 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                   to={item.path}
                   onClick={handleClose}
                   className={({ isActive }) => `sidebar-nav-link ${isActive ? 'active' : ''}`}
+                  title={item.label}
                 >
                   <Icon className="nav-icon" style={{ width: '18px', height: '18px', flexShrink: 0 }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <div className="sidebar-text-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', lineHeight: '1.2' }}>
                       {item.label}
                     </span>
@@ -226,37 +249,40 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
         </nav>
 
         {/* BOTTOM SECTION: User Profile Capsule & Footer */}
-        <div style={{ marginTop: 'auto', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        <div style={{ marginTop: 'auto', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.65rem', width: '100%' }}>
           
           {/* User Profile Info Capsule */}
-          <div style={{
-            padding: '0.65rem 0.85rem',
+          <div className="sidebar-user-card" style={{
+            padding: sidebarCollapsed ? '0.5rem 0.2rem' : '0.65rem 0.85rem',
             background: 'var(--bg-card)',
             borderRadius: 'var(--radius-sm)',
             border: '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: sidebarCollapsed ? 'center' : 'space-between',
             gap: '0.5rem',
             boxShadow: 'var(--shadow-sm)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0, flex: 1 }}>
-              <div style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '50%',
-                background: isAdmin ? 'var(--gsh-red)' : 'var(--gsh-teal)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '0.85rem',
-                flexShrink: 0
-              }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0, flex: sidebarCollapsed ? 'initial' : 1, justifyContent: sidebarCollapsed ? 'center' : 'flex-start' }}>
+              <div 
+                title={`${user?.full_name || user?.username || 'User'} (${user?.role || 'user'})`}
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  background: isAdmin ? 'var(--gsh-red)' : 'var(--gsh-teal)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  flexShrink: 0
+                }}
+              >
                 {(user?.username || 'U')[0].toUpperCase()}
               </div>
-              <div style={{ overflow: 'hidden', minWidth: 0, flex: 1 }}>
+              <div className="sidebar-user-details" style={{ overflow: 'hidden', minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                   {user?.full_name || user?.username || 'Standard User'}
                 </div>
@@ -268,6 +294,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
 
             <button
               onClick={handleLogout}
+              className="sidebar-logout-btn"
               title="Logout"
               style={{
                 background: 'none',
@@ -286,7 +313,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
           </div>
 
           {/* System Version Footer */}
-          <div style={{
+          <div className="sidebar-version-footer" style={{
             fontSize: '0.7rem',
             color: 'var(--text-subtle)',
             textAlign: 'center'

@@ -45,8 +45,8 @@ def _require_env(key: str) -> str:
 AZURE_CLIENT_ID     = _require_env("AZURE_CLIENT_ID")
 AZURE_CLIENT_SECRET = _require_env("AZURE_CLIENT_SECRET")
 AZURE_TENANT_ID     = _require_env("AZURE_TENANT_ID")
-AZURE_REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI", "http://gsh-sd.georgesteuart.lk/api/auth/microsoft/callback")
-FRONTEND_URL        = os.getenv("FRONTEND_URL", "http://gsh-sd.georgesteuart.lk")
+AZURE_REDIRECT_URI  = os.getenv("AZURE_REDIRECT_URI", "https://gsh-sd.georgesteuart.lk/api/auth/microsoft/callback")
+FRONTEND_URL        = os.getenv("FRONTEND_URL", "https://gsh-sd.georgesteuart.lk")
 
 # FIX-7: Whitelist of allowed OAuth redirect URIs
 ALLOWED_REDIRECT_URIS = {
@@ -58,21 +58,29 @@ ALLOWED_REDIRECT_URIS = {
     if uri.strip()
 }
 
-# FIX-9: In-memory short-lived one-time code store for OAuth callback
-# Format: {code: {user_data, expires_at}}
-_oauth_temp_codes: dict = {}
-
 def _create_oauth_temp_code(user_data: dict) -> str:
-    """Create a one-time 32-char random code valid for 60 seconds."""
+    """Create a one-time random code stored in MySQL valid for 90 seconds across all workers."""
     code = secrets.token_urlsafe(32)
-    _oauth_temp_codes[code] = {
-        "user": user_data,
-        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=60),
-    }
-    # Clean up expired codes
-    expired = [k for k, v in _oauth_temp_codes.items() if v["expires_at"] < datetime.now(timezone.utc)]
-    for k in expired:
-        del _oauth_temp_codes[k]
+    expires = datetime.now() + timedelta(seconds=90)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS oauth_temp_codes (
+                    code VARCHAR(128) PRIMARY KEY,
+                    data_json TEXT NOT NULL,
+                    expires_at DATETIME NOT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+            # Clean up expired codes
+            cursor.execute("DELETE FROM oauth_temp_codes WHERE expires_at < NOW();")
+            cursor.execute(
+                "INSERT INTO oauth_temp_codes (code, data_json, expires_at) VALUES (%s, %s, %s);",
+                (code, json.dumps(user_data), expires.strftime("%Y-%m-%d %H:%M:%S"))
+            )
+        conn.commit()
+    finally:
+        conn.close()
     return code
 
 
@@ -93,6 +101,13 @@ def init_users_table():
                 account_type VARCHAR(20) DEFAULT 'system',
                 azure_oid VARCHAR(100) DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS oauth_temp_codes (
+                code VARCHAR(128) PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                expires_at DATETIME NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
 
@@ -298,30 +313,62 @@ def microsoft_callback(
             token_resp = json.loads(resp.read().decode("utf-8"))
             ms_access_token = token_resp.get("access_token")
 
-        if not ms_access_token:
-            return RedirectResponse(url=f"{FRONTEND_URL}/login?error=token_failed")
+        import base64
+        id_token = token_resp.get("id_token")
+        id_payload = {}
+        if id_token:
+            try:
+                parts = id_token.split(".")
+                if len(parts) >= 2:
+                    p_b64 = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
+                    id_payload = json.loads(base64.urlsafe_b64decode(p_b64.decode() if isinstance(p_b64, bytes) else p_b64).decode("utf-8"))
+            except Exception as e:
+                audit_logger.warning(f"Error parsing id_token: {e}")
 
-        me_req = urllib.request.Request(
-            "https://graph.microsoft.com/v1.0/me",
-            headers={"Authorization": f"Bearer {ms_access_token}"},
-        )
-        with urllib.request.urlopen(me_req, timeout=10) as me_resp:
-            profile = json.loads(me_resp.read().decode("utf-8"))
+        profile = {}
+        if ms_access_token:
+            try:
+                me_req = urllib.request.Request(
+                    "https://graph.microsoft.com/v1.0/me",
+                    headers={"Authorization": f"Bearer {ms_access_token}"},
+                )
+                with urllib.request.urlopen(me_req, timeout=5) as me_resp:
+                    profile = json.loads(me_resp.read().decode("utf-8"))
+            except Exception as e:
+                audit_logger.warning(f"Graph /me request failed, falling back to id_token: {e}")
 
-        email     = profile.get("mail") or profile.get("userPrincipalName") or ""
-        azure_oid = profile.get("id") or ""
-        full_name = profile.get("displayName") or email.split("@")[0]
+        email = (
+            profile.get("mail")
+            or profile.get("userPrincipalName")
+            or id_payload.get("email")
+            or id_payload.get("preferred_username")
+            or id_payload.get("upn")
+            or ""
+        ).strip().lower()
+
+        azure_oid = str(profile.get("id") or id_payload.get("oid") or id_payload.get("sub") or "").strip()
+        full_name = profile.get("displayName") or id_payload.get("name") or (email.split("@")[0] if email else "User")
 
         if not email:
             return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_email")
 
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, username, full_name, email, role FROM users WHERE email = %s OR azure_oid = %s;",
-                (email, azure_oid),
-            )
+            cursor.execute("""
+                SELECT id, username, full_name, email, role, azure_oid
+                FROM users 
+                WHERE LOWER(TRIM(email)) = %s 
+                   OR (azure_oid IS NOT NULL AND azure_oid != '' AND azure_oid = %s)
+                   OR LOWER(TRIM(username)) = %s;
+            """, (email, azure_oid, email.split("@")[0] if email else ""))
             user = cursor.fetchone()
+
+            if user and azure_oid and not user.get("azure_oid"):
+                try:
+                    cursor.execute("UPDATE users SET azure_oid = %s WHERE id = %s;", (azure_oid, user["id"]))
+                    conn.commit()
+                except Exception:
+                    pass
         conn.close()
 
         if not user:
@@ -352,18 +399,39 @@ def microsoft_callback(
 @router.post("/microsoft/exchange")
 def exchange_oauth_code(payload: dict = Body(...)):
     """
-    FIX-9: Exchange one-time OAuth code for JWT token.
-    Replaces the insecure pattern of passing token directly in the redirect URL.
+    Exchange one-time OAuth code for JWT token from MySQL.
+    Safe across multiple Uvicorn workers.
     """
     code = payload.get("code", "").strip()
-    if not code or code not in _oauth_temp_codes:
+    if not code:
         raise HTTPException(status_code=401, detail="Invalid or expired OAuth code")
 
-    entry = _oauth_temp_codes.pop(code)
-    if entry["expires_at"] < datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="OAuth code expired. Please login again.")
+    conn = get_db_connection()
+    user_payload = None
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT data_json, expires_at FROM oauth_temp_codes WHERE code = %s;", (code,))
+            row = cursor.fetchone()
+            if row:
+                # Delete immediately to guarantee one-time usage
+                cursor.execute("DELETE FROM oauth_temp_codes WHERE code = %s;", (code,))
+                conn.commit()
+                exp = row["expires_at"]
+                if isinstance(exp, str):
+                    exp = datetime.strptime(exp, "%Y-%m-%d %H:%M:%S")
+                if exp >= datetime.now():
+                    user_payload = json.loads(row["data_json"])
+    finally:
+        conn.close()
 
-    return {"success": True, "token": entry["user"]["token"], "user": entry["user"]["user"]}
+    if not user_payload:
+        raise HTTPException(status_code=401, detail="OAuth code expired or already used. Please login again.")
+
+    return {
+        "success": True, 
+        "token": user_payload["token"], 
+        "user": user_payload["user"]
+    }
 
 
 # ── Microsoft Graph — App Token Helper ───────────────────────────────────────
