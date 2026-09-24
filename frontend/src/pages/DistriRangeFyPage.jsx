@@ -500,7 +500,7 @@ const DistriRangeFyPage = () => {
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.rd_tgt, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(div.rd_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
-                          <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: div.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
+                          <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)', color: div.rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>
                             {div.rd_pct}%
                           </span>
                         </td>
@@ -516,7 +516,7 @@ const DistriRangeFyPage = () => {
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>{formatValue(div.c_rd_tgt, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(div.c_rd_act, unitMode)}</td>
                         <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
-                          <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: div.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
+                          <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 800, background: div.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)', color: div.c_rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>
                             {div.c_rd_pct}%
                           </span>
                         </td>
@@ -558,7 +558,7 @@ const DistriRangeFyPage = () => {
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.rd_tgt, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(sub.rd_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{sub.rd_pct}%</span>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>{sub.rd_pct}%</span>
                               </td>
 
                               {/* Cumulative */}
@@ -570,7 +570,7 @@ const DistriRangeFyPage = () => {
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>{formatValue(sub.c_rd_tgt, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(sub.c_rd_act, unitMode)}</td>
                               <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{sub.c_rd_pct}%</span>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: sub.c_rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>{sub.c_rd_pct}%</span>
                               </td>
                             </tr>
 
@@ -596,7 +596,7 @@ const DistriRangeFyPage = () => {
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.rd_tgt, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(item.rd_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
-                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{item.rd_pct}%</span>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>{item.rd_pct}%</span>
                                 </td>
 
                                 {/* Cumulative */}
@@ -608,7 +608,7 @@ const DistriRangeFyPage = () => {
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: 'var(--text-subtle)' }}>{formatValue(item.c_rd_tgt, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(item.c_rd_act, unitMode)}</td>
                                 <td style={{ padding: '0.4rem 0.75rem', textAlign: 'right' }}>
-                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>{item.c_rd_pct}%</span>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: item.c_rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>{item.c_rd_pct}%</span>
                                 </td>
                               </tr>
                             ))}
@@ -640,7 +640,7 @@ const DistriRangeFyPage = () => {
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.rd_tgt, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(grandTotal.rd_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', borderRight: '1px solid var(--border-color)' }}>
-                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: grandTotal.rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
+                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)', color: grandTotal.rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>
                       {grandTotal.rd_pct}%
                     </span>
                   </td>
@@ -656,7 +656,7 @@ const DistriRangeFyPage = () => {
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>{formatValue(grandTotal.c_rd_tgt, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right', color: '#3b82f6' }}>{formatValue(grandTotal.c_rd_act, unitMode)}</td>
                   <td style={{ padding: '0.75rem', textAlign: 'right' }}>
-                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)', color: grandTotal.c_rd_pct >= 100 ? '#3b82f6' : '#f59e0b' }}>
+                    <span style={{ padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800, background: grandTotal.c_rd_pct >= 100 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)', color: grandTotal.c_rd_pct >= 100 ? '#3b82f6' : '#ef4444' }}>
                       {grandTotal.c_rd_pct}%
                     </span>
                   </td>

@@ -422,7 +422,7 @@ const TotalRangeFyPage = () => {
                   TOTAL - CURRENT MONTH DETAILS ({selectedMonth.toUpperCase()}) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(59, 130, 246, 0.08)', color: '#3b82f6' }}>
-                  CUMULATIVE - SALES UPDATE (LAST 4 MONTHS) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
+                  CUMULATIVE - SALES UPDATE {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="3" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', background: 'rgba(200, 16, 46, 0.08)', color: 'var(--gsh-red)' }}>
                   ANNUAL - SALES UPDATE (FULL YEAR FY 2026/27) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}

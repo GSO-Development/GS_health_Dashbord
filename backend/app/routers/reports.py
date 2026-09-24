@@ -155,15 +155,15 @@ def get_outstanding_output(
 
 
 # 3. Total Range Wise FY Endpoint (Range -> Sales Group -> Product SKUs mapped via division_mappings & invoice_output)
-FY_MONTH_ORDER = [
-    "april", "may", "june", "july", "august", "september",
-    "october", "november", "december", "january", "february", "march"
+CALENDAR_MONTH_ORDER = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december"
 ]
 
 MONTH_NUM_MAP = {
-    "april": 4, "may": 5, "june": 6, "july": 7,
-    "august": 8, "september": 9, "october": 10, "november": 11,
-    "december": 12, "january": 1, "february": 2, "march": 3
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12
 }
 
 @router.get("/total-range-fy")
@@ -181,7 +181,7 @@ def get_total_range_fy(
         b_mode = "without"
 
     m_clean = month.lower().strip() if isinstance(month, str) else "july"
-    selected_month = m_clean if m_clean in FY_MONTH_ORDER else "july"
+    selected_month = m_clean if m_clean in CALENDAR_MONTH_ORDER else "july"
     
     s_date = start_date.strip() if isinstance(start_date, str) and start_date.strip() else None
     e_date = end_date.strip() if isinstance(end_date, str) and end_date.strip() else None
@@ -198,8 +198,9 @@ def get_total_range_fy(
     if has_date_filter and s_date > e_date:
         s_date, e_date = e_date, s_date
     
-    idx = FY_MONTH_ORDER.index(selected_month)
-    cum_months = FY_MONTH_ORDER[:idx + 1]
+    # Cumulative calculation: From January up to the currently selected month
+    idx = CALENDAR_MONTH_ORDER.index(selected_month)
+    cum_months = CALENDAR_MONTH_ORDER[:idx + 1]
     cum_m_nums = [MONTH_NUM_MAP[m] for m in cum_months]
 
     # Handle Contracts Filter
@@ -371,8 +372,7 @@ def get_total_range_fy(
                     SUM(i.net_dom_amount) as total_act
                 FROM invoice_output i
                 WHERE (
-                    (YEAR(i.invoice_date) = 2026 AND MONTH(i.invoice_date) >= 4) OR
-                    (YEAR(i.invoice_date) = 2027 AND MONTH(i.invoice_date) <= 3)
+                    YEAR(i.invoice_date) = 2026 OR YEAR(i.invoice_date) = 2027
                 ) {c_clause_i}
                 GROUP BY s_grp, part_no, contract_code, inv_m;
             """
