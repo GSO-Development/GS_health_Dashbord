@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Search, Layers, Calendar, DollarSign, ArrowLeftRight, X, AlertCircle, Edit3, Save } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, RefreshCw, Search, Layers, Calendar, DollarSign, ArrowLeftRight, X, AlertCircle, Edit3, Save, PlusCircle, Trash2 } from 'lucide-react';
 import api from '../services/api';
 
 const fmt = (v) => (v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -15,6 +15,28 @@ const MONTH_KEYS = [
   'april', 'may', 'june', 'july', 'august', 'september',
   'october', 'november', 'december', 'january', 'february', 'march'
 ];
+
+const INITIAL_ADD_FORM = {
+  fiscal_year: 'FY 2026/27',
+  range_name: '',
+  sales_group: '',
+  part_no: '',
+  product_sku: '',
+  cost_center: '',
+  april: 0,
+  may: 0,
+  june: 0,
+  july: 0,
+  august: 0,
+  september: 0,
+  october: 0,
+  november: 0,
+  december: 0,
+  january: 0,
+  february: 0,
+  march: 0,
+  total: 0,
+};
 
 const UploadAnnualBudgetPage = () => {
   const [rows, setRows] = useState([]);
@@ -38,11 +60,20 @@ const UploadAnnualBudgetPage = () => {
   // Overwrite Confirmation State
   const [overwritePrompt, setOverwritePrompt] = useState(null);
 
+  // Add Record Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addFormData, setAddFormData] = useState(INITIAL_ADD_FORM);
+  const [savingAdd, setSavingAdd] = useState(false);
+
   // Edit Row State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Delete Row State
+  const [deletePrompt, setDeletePrompt] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Toast Notification State
   const [toast, setToast] = useState(null);
@@ -50,6 +81,73 @@ const UploadAnnualBudgetPage = () => {
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleOpenAddModal = () => {
+    setAddFormData({
+      ...INITIAL_ADD_FORM,
+      fiscal_year: selectedYearFilter && selectedYearFilter !== 'all' ? selectedYearFilter : 'FY 2026/27'
+    });
+    setIsAddModalOpen(true);
+  };
+
+  const handleAddFieldChange = (field, value) => {
+    setAddFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      if (MONTH_KEYS.includes(field)) {
+        const sum = MONTH_KEYS.reduce((acc, m) => acc + (parseFloat(m === field ? value : updated[m]) || 0), 0);
+        updated.total = sum;
+      }
+      return updated;
+    });
+  };
+
+  const handleCreateBudgetSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!addFormData.range_name.trim()) {
+      showToast('Range Name is required!', 'error');
+      return;
+    }
+    if (!addFormData.sales_group.trim()) {
+      showToast('Sales Group is required!', 'error');
+      return;
+    }
+
+    setSavingAdd(true);
+    try {
+      const res = await api.post('/reports/total-budget', addFormData);
+      if (res.data) {
+        showToast(res.data.message || '✅ New budget record created successfully!');
+        setIsAddModalOpen(false);
+        setAddFormData(INITIAL_ADD_FORM);
+        await loadBudgetData();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to create budget record.';
+      showToast(msg, 'error');
+    }
+    setSavingAdd(false);
+  };
+
+  const handleDeleteClick = (row) => {
+    setDeletePrompt(row);
+  };
+
+  const confirmDeleteRow = async () => {
+    if (!deletePrompt) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/reports/total-budget/${deletePrompt.id}`);
+      if (res.data) {
+        showToast(res.data.message || `Record #${deletePrompt.id} deleted successfully!`, 'success');
+        setDeletePrompt(null);
+        await loadBudgetData();
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to delete budget record.';
+      showToast(msg, 'error');
+    }
+    setDeleting(false);
   };
 
   const handleEditClick = (row) => {
@@ -208,31 +306,55 @@ const UploadAnnualBudgetPage = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setIsModalOpen(true);
-            setOverwritePrompt(null);
-            setSelectedFile(null);
-          }}
-          style={{
-            padding: '0.65rem 1.2rem',
-            borderRadius: 'var(--radius-xs)',
-            border: 'none',
-            background: 'var(--gsh-teal)',
-            color: '#ffffff',
-            fontWeight: 800,
-            fontSize: '0.85rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            boxShadow: '0 4px 12px rgba(0, 168, 150, 0.3)',
-            transition: 'transform 0.15s ease'
-          }}
-        >
-          <Upload style={{ width: '18px', height: '18px' }} />
-          📤 Upload Annual Budget Excel
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleOpenAddModal}
+            style={{
+              padding: '0.65rem 1.2rem',
+              borderRadius: 'var(--radius-xs)',
+              border: 'none',
+              background: 'var(--accent-gradient, linear-gradient(135deg, #c8102e, #990011))',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              boxShadow: '0 4px 12px rgba(200, 16, 46, 0.3)',
+              transition: 'transform 0.15s ease'
+            }}
+          >
+            <PlusCircle style={{ width: '18px', height: '18px' }} />
+            ➕ Add Single Record
+          </button>
+
+          <button
+            onClick={() => {
+              setIsModalOpen(true);
+              setOverwritePrompt(null);
+              setSelectedFile(null);
+            }}
+            style={{
+              padding: '0.65rem 1.2rem',
+              borderRadius: 'var(--radius-xs)',
+              border: 'none',
+              background: 'var(--gsh-teal)',
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              boxShadow: '0 4px 12px rgba(0, 168, 150, 0.3)',
+              transition: 'transform 0.15s ease'
+            }}
+          >
+            <Upload style={{ width: '18px', height: '18px' }} />
+            📤 Upload Excel File
+          </button>
+        </div>
       </div>
 
       {/* Top KPI Cards */}
@@ -315,12 +437,12 @@ const UploadAnnualBudgetPage = () => {
       </div>
 
       {/* Main Datatable */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 310px)', overflowY: 'auto' }}>
+      <div className="glass-card table-glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="main-table-scroll-wrapper" style={{ overflowX: 'auto', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontWeight: 800 }}>
               <tr style={{ color: 'var(--text-subtle)' }}>
-                <th style={{ padding: '0.6rem 0.75rem', width: '75px', textAlign: 'center' }}>Action</th>
+                <th style={{ padding: '0.6rem 0.75rem', width: '135px', textAlign: 'center' }}>Action</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Range Name</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Sales Group</th>
                 <th style={{ padding: '0.6rem 0.75rem' }}>Part No</th>
@@ -356,30 +478,55 @@ const UploadAnnualBudgetPage = () => {
               ) : (
                 rows.map((row, idx) => (
                   <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border-color)', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-hover)' }}>
-                    {/* Action Column: Edit Button */}
-                    <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleEditClick(row)}
-                        title="Edit this budget record"
-                        style={{
-                          padding: '0.25rem 0.55rem',
-                          background: 'rgba(59,130,246,0.12)',
-                          border: '1px solid rgba(59,130,246,0.3)',
-                          borderRadius: '4px',
-                          color: '#3b82f6',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.25rem',
-                          transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.25)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.12)'}
-                      >
-                        <Edit3 style={{ width: '13px', height: '13px' }} /> Edit
-                      </button>
+                    {/* Action Column: Edit & Delete Buttons */}
+                    <td style={{ padding: '0.45rem 0.6rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <button
+                          onClick={() => handleEditClick(row)}
+                          title="Edit this budget record"
+                          style={{
+                            padding: '0.25rem 0.45rem',
+                            background: 'rgba(59,130,246,0.12)',
+                            border: '1px solid rgba(59,130,246,0.3)',
+                            borderRadius: '4px',
+                            color: '#3b82f6',
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.25)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.12)'}
+                        >
+                          <Edit3 style={{ width: '12px', height: '12px' }} /> Edit
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteClick(row)}
+                          title="Delete this budget record"
+                          style={{
+                            padding: '0.25rem 0.45rem',
+                            background: 'rgba(239,68,68,0.12)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            borderRadius: '4px',
+                            color: '#ef4444',
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.25)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(239,68,68,0.12)'}
+                        >
+                          <Trash2 style={{ width: '12px', height: '12px' }} /> Delete
+                        </button>
+                      </div>
                     </td>
 
                     <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: 'var(--gsh-red)' }}>{row.range_name}</td>
@@ -719,6 +866,244 @@ const UploadAnnualBudgetPage = () => {
 
             </form>
 
+          </div>
+        </div>
+      )}
+
+      {/* ─── ADD NEW BUDGET RECORD MODAL POPUP ─── */}
+      {isAddModalOpen && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget && !savingAdd) setIsAddModalOpen(false); }}
+          style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, 
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)', 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', boxSizing: 'border-box' 
+          }}
+        >
+          <div 
+            className="glass-card animate-fade-in" 
+            style={{ 
+              width: '100%', maxWidth: '850px', maxHeight: '92vh', overflowY: 'auto',
+              background: 'var(--bg-card, #ffffff)', borderRadius: 'var(--radius-md)', 
+              border: '1.5px solid var(--gsh-red, #c8102e)', padding: '1.75rem', 
+              display: 'flex', flexDirection: 'column', gap: '1.25rem', boxShadow: '0 25px 60px rgba(0,0,0,0.45)' 
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 800, fontSize: '1.15rem', color: 'var(--text-main)' }}>
+                  <PlusCircle style={{ width: '22px', height: '22px', color: 'var(--gsh-red)' }} />
+                  Add New Annual Budget Record
+                </div>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Enter Master parameters and 12 monthly budget allocations to insert a new budget entry directly into database.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsAddModalOpen(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-subtle)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateBudgetSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              
+              {/* Section 1: Core Master Information */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.85rem', background: 'var(--bg-hover)', padding: '1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                
+                {/* Fiscal Year */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Fiscal Year *</label>
+                  <select
+                    value={addFormData.fiscal_year}
+                    onChange={e => handleAddFieldChange('fiscal_year', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 700 }}
+                  >
+                    {FISCAL_YEARS.map(fy => (
+                      <option key={fy} value={fy}>{fy}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Range Name */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gsh-red)' }}>Range Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. CARDIOVASCULAR"
+                    value={addFormData.range_name}
+                    onChange={e => handleAddFieldChange('range_name', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Sales Group */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--gsh-teal)' }}>Sales Group *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. CARDIO 01"
+                    value={addFormData.sales_group}
+                    onChange={e => handleAddFieldChange('sales_group', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Part No */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Part No (Item Code)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. CC001"
+                    value={addFormData.part_no}
+                    onChange={e => handleAddFieldChange('part_no', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontFamily: 'monospace', fontWeight: 700 }}
+                  />
+                </div>
+
+                {/* Cost Center */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Cost Center</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 101"
+                    value={addFormData.cost_center}
+                    onChange={e => handleAddFieldChange('cost_center', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem' }}
+                  />
+                </div>
+
+                {/* Product SKU */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-main)' }}>Product SKU / Description</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. ATORVASTATIN 10MG 30S"
+                    value={addFormData.product_sku}
+                    onChange={e => handleAddFieldChange('product_sku', e.target.value)}
+                    style={{ padding: '0.5rem 0.65rem', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.825rem', fontWeight: 600 }}
+                  />
+                </div>
+
+              </div>
+
+              {/* Section 2: 12 Monthly Budget Targets */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.825rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-subtle)' }}>
+                    Monthly Budget Targets (LKR)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-muted)' }}>Auto Calculated Total:</span>
+                    <strong style={{ color: 'var(--gsh-red)', fontSize: '0.95rem', background: 'rgba(200,16,46,0.08)', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
+                      Rs. {fmt(addFormData.total)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.6rem' }}>
+                  {MONTH_KEYS.map((m) => (
+                    <div key={m} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'var(--bg-hover)', padding: '0.5rem 0.6rem', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                      <label style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'capitalize', color: m === 'july' ? 'var(--gsh-teal)' : 'var(--text-muted)' }}>
+                        {m}
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={addFormData[m] !== undefined ? addFormData[m] : 0}
+                        onChange={e => handleAddFieldChange(m, e.target.value)}
+                        style={{ width: '100%', padding: '0.35rem 0.45rem', borderRadius: '3px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.8rem', fontWeight: 700, textAlign: 'right', outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  disabled={savingAdd}
+                  onClick={() => setIsAddModalOpen(false)}
+                  style={{ padding: '0.55rem 1.2rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingAdd}
+                  style={{
+                    padding: '0.55rem 1.4rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: 'none',
+                    background: 'var(--accent-gradient, linear-gradient(135deg, #c8102e, #990011))',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    cursor: savingAdd ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    boxShadow: '0 4px 14px rgba(200,16,46,0.3)'
+                  }}
+                >
+                  {savingAdd ? (
+                    <RefreshCw className="animate-spin" style={{ width: '15px', height: '15px' }} />
+                  ) : (
+                    <PlusCircle style={{ width: '15px', height: '15px' }} />
+                  )}
+                  Save & Insert Record
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* ─── DELETE CONFIRMATION MODAL POPUP ─── */}
+      {deletePrompt && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) setDeletePrompt(null); }}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+        >
+          <div className="glass-card animate-fade-in" style={{ width: '460px', maxWidth: '100%', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1.5px solid #ef4444', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', boxShadow: '0 20px 50px rgba(0,0,0,0.45)' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+              <div style={{ padding: '0.6rem', borderRadius: '50%', background: 'rgba(239,68,68,0.15)', color: '#ef4444', flexShrink: 0 }}>
+                <Trash2 style={{ width: '24px', height: '24px' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, color: '#ef4444', fontWeight: 800, fontSize: '1.05rem' }}>Delete Budget Record</h3>
+                <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.825rem', color: 'var(--text-main)', lineHeight: 1.4 }}>
+                  Are you sure you want to delete budget record <strong style={{ color: 'var(--gsh-red)' }}>#{deletePrompt.id}</strong> (<strong>{deletePrompt.range_name}</strong> - {deletePrompt.sales_group} - {deletePrompt.part_no})?
+                </p>
+                <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  This record will be permanently removed from the database.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+              <button
+                disabled={deleting}
+                onClick={() => setDeletePrompt(null)}
+                style={{ padding: '0.5rem 1rem', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-main)', fontWeight: 700, cursor: 'pointer', fontSize: '0.825rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={deleting}
+                onClick={confirmDeleteRow}
+                style={{ padding: '0.5rem 1.25rem', borderRadius: 'var(--radius-xs)', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 800, cursor: deleting ? 'not-allowed' : 'pointer', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete Record'}
+              </button>
+            </div>
           </div>
         </div>
       )}

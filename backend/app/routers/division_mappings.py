@@ -452,33 +452,60 @@ def create_division_mapping(payload: dict = Body(...)):
     sales_group = str(payload.get("sales_group") or "").strip()
     range_name = str(payload.get("range_name") or "").strip()
     visibility = str(payload.get("visibility") or "both").strip().lower()
+    match_type = str(payload.get("match_type") or "CATALOG_GROUP").strip().upper()
+    contract_code = payload.get("contract_code")
+    if contract_code:
+        contract_code = str(contract_code).strip().upper()
+    else:
+        contract_code = None
+    fiscal_year = str(payload.get("fiscal_year") or "FY 2026/27").strip()
+    part_no = str(payload.get("part_no") or "-").strip()
+    product_sku = str(payload.get("product_sku") or "").strip()
+
     if visibility not in ["both", "total_range", "distri_range"]:
         visibility = "both"
+    if match_type not in ["CATALOG_GROUP", "CONTRACT", "CATALOG_NO"]:
+        match_type = "CATALOG_GROUP"
 
     if not sales_group or not range_name:
-        raise HTTPException(status_code=400, detail="Sales group and range name cannot be empty.")
+        raise HTTPException(status_code=400, detail="Sales Group and Range name are required.")
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO division_mappings (sales_group, range_name, visibility)
-                VALUES (%s, %s, %s)
+                INSERT INTO division_mappings (sales_group, range_name, match_type, contract_code, visibility)
+                VALUES (%s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE 
                     range_name = VALUES(range_name),
+                    match_type = VALUES(match_type),
+                    contract_code = VALUES(contract_code),
                     visibility = VALUES(visibility);
-            """, (sales_group, range_name, visibility))
+            """, (sales_group, range_name, match_type, contract_code, visibility))
             new_id = cursor.lastrowid
 
-            # Also sync total_budget
-            try:
+            # Sync with total_budget
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM total_budget 
+                WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s)) AND (fiscal_year = %s OR fiscal_year IS NULL);
+            """, (sales_group, fiscal_year))
+            existing_count = cursor.fetchone()['cnt']
+
+            if existing_count == 0:
+                cursor.execute("""
+                    INSERT INTO total_budget (
+                        fiscal_year, range_name, sales_group, part_no, product_sku, total
+                    ) VALUES (%s, %s, %s, %s, %s, 0);
+                """, (fiscal_year, range_name, sales_group, part_no, product_sku or f"{sales_group} Item"))
+            else:
                 cursor.execute("""
                     UPDATE total_budget
                     SET range_name = %s
-                    WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));
-                """, (range_name, sales_group))
-            except Exception:
-                pass
+                    WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s))
+                      AND (fiscal_year = %s OR fiscal_year IS NULL OR fiscal_year = '');
+                """, (range_name, sales_group, fiscal_year))
+
+            conn.commit()
     finally:
         conn.close()
 
@@ -488,43 +515,23 @@ def create_division_mapping(payload: dict = Body(...)):
         "sales_group": sales_group,
         "range_name": range_name,
         "visibility": visibility,
-        "message": f"Mapping created/updated for '{sales_group}' -> '{range_name}' (Visibility: {visibility})."
+        "match_type": match_type,
+        "contract_code": contract_code,
+        "message": f"Mapping created for '{sales_group}' -> '{range_name}' successfully!"
     }
 
 
 @router.post("/add-sales-group")
 def add_new_sales_group(payload: dict = Body(...)):
-    init_division_mappings_table()
-    sales_group = str(payload.get("sales_group") or "").strip()
-    default_range = str(payload.get("default_range") or "Unassigned").strip()
-    if not sales_group:
-        raise HTTPException(status_code=400, detail="Sales Group name cannot be empty.")
-
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO division_mappings (sales_group, range_name)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE sales_group = VALUES(sales_group);
-            """, (sales_group, default_range))
-            new_id = cursor.lastrowid
-    finally:
-        conn.close()
-
-    return {
-        "status": "success",
-        "id": new_id,
-        "sales_group": sales_group,
-        "range_name": default_range,
-        "message": f"New Sales Group '{sales_group}' added successfully!"
-    }
+    return create_division_mapping(payload)
 
 
 @router.post("/add-range")
 def add_new_range(payload: dict = Body(...)):
     init_division_mappings_table()
     range_name = str(payload.get("range_name") or "").strip()
+    sales_group = str(payload.get("sales_group") or "(blank)").strip()
+    fiscal_year = str(payload.get("fiscal_year") or "FY 2026/27").strip()
     if not range_name:
         raise HTTPException(status_code=400, detail="Range name cannot be empty.")
 
@@ -535,8 +542,21 @@ def add_new_range(payload: dict = Body(...)):
                 INSERT INTO division_mappings (sales_group, range_name)
                 VALUES (%s, %s)
                 ON DUPLICATE KEY UPDATE range_name = VALUES(range_name);
-            """, ("(blank)", range_name))
+            """, (sales_group, range_name))
             new_id = cursor.lastrowid
+            
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM total_budget 
+                WHERE LOWER(TRIM(range_name)) = LOWER(TRIM(%s)) AND (fiscal_year = %s OR fiscal_year IS NULL);
+            """, (range_name, fiscal_year))
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute("""
+                    INSERT INTO total_budget (
+                        fiscal_year, range_name, sales_group, part_no, product_sku, total
+                    ) VALUES (%s, %s, %s, '-', %s, 0);
+                """, (fiscal_year, range_name, sales_group if sales_group != "(blank)" else range_name, f"{range_name} Range Master"))
+            
+            conn.commit()
     finally:
         conn.close()
 
@@ -544,7 +564,116 @@ def add_new_range(payload: dict = Body(...)):
         "status": "success",
         "id": new_id,
         "range_name": range_name,
-        "message": f"New Range '{range_name}' category registered successfully!"
+        "message": f"New Range '{range_name}' created and registered successfully!"
+    }
+
+
+@router.put("/edit-row")
+def edit_full_mapping_row(payload: dict = Body(...)):
+    init_division_mappings_table()
+    row_id = payload.get("id") or payload.get("budget_id")
+    sales_group = str(payload.get("sales_group") or "").strip()
+    range_name = str(payload.get("range_name") or "").strip()
+    part_no = str(payload.get("part_no") or "").strip()
+    product_sku = str(payload.get("product_sku") or "").strip()
+    match_type = str(payload.get("match_type") or "CATALOG_GROUP").strip().upper()
+    contract_code = payload.get("contract_code")
+    if contract_code:
+        contract_code = str(contract_code).strip().upper()
+    else:
+        contract_code = None
+    visibility = str(payload.get("visibility") or "both").strip().lower()
+    if visibility not in ["both", "total_range", "distri_range"]:
+        visibility = "both"
+    if match_type not in ["CATALOG_GROUP", "CONTRACT", "CATALOG_NO"]:
+        match_type = "CATALOG_GROUP"
+    fiscal_year = str(payload.get("fiscal_year") or "FY 2026/27").strip()
+
+    if not sales_group or not range_name:
+        raise HTTPException(status_code=400, detail="Sales Group and Range Name cannot be empty.")
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. Upsert into division_mappings
+            cursor.execute("""
+                INSERT INTO division_mappings (sales_group, range_name, match_type, contract_code, visibility)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                    range_name = VALUES(range_name),
+                    match_type = VALUES(match_type),
+                    contract_code = VALUES(contract_code),
+                    visibility = VALUES(visibility);
+            """, (sales_group, range_name, match_type, contract_code, visibility))
+
+            # 2. Update specific row in total_budget if row_id is provided
+            if row_id:
+                cursor.execute("""
+                    UPDATE total_budget
+                    SET sales_group = %s,
+                        range_name = %s,
+                        part_no = %s,
+                        product_sku = %s,
+                        fiscal_year = %s
+                    WHERE id = %s;
+                """, (sales_group, range_name, part_no, product_sku, fiscal_year, row_id))
+
+            # 3. Also update all related total_budget items with the same sales group
+            cursor.execute("""
+                UPDATE total_budget
+                SET range_name = %s
+                WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));
+            """, (range_name, sales_group))
+
+            conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Mapping record for '{sales_group}' -> '{range_name}' updated successfully!",
+        "data": {
+            "id": row_id,
+            "sales_group": sales_group,
+            "range_name": range_name,
+            "part_no": part_no,
+            "product_sku": product_sku,
+            "match_type": match_type,
+            "contract_code": contract_code,
+            "visibility": visibility,
+            "fiscal_year": fiscal_year
+        }
+    }
+
+
+@router.delete("/delete-row/{row_id}")
+def delete_mapping_row(row_id: int):
+    conn = get_db_connection()
+    deleted_info = {}
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT sales_group, range_name, part_no, product_sku FROM total_budget WHERE id = %s;", (row_id,))
+            row = cursor.fetchone()
+            if row:
+                sg = row['sales_group']
+                cursor.execute("DELETE FROM total_budget WHERE id = %s;", (row_id,))
+                deleted_info = dict(row)
+
+                # Check if there are other items in total_budget for this sales group
+                cursor.execute("SELECT COUNT(*) as cnt FROM total_budget WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));", (sg,))
+                if cursor.fetchone()['cnt'] == 0:
+                    cursor.execute("DELETE FROM division_mappings WHERE LOWER(TRIM(sales_group)) = LOWER(TRIM(%s));", (sg,))
+            else:
+                # Try deleting from division_mappings if it was a mapping ID
+                cursor.execute("DELETE FROM division_mappings WHERE id = %s;", (row_id,))
+            conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Record #{row_id} deleted successfully.",
+        "deleted_info": deleted_info
     }
 
 
@@ -1000,4 +1129,203 @@ def bulk_save_unmapped_mappings(payload: dict = Body(...)):
         "message": f"Successfully saved {saved_count} unmapped items to Division Mappings & Budget Master!",
         "saved_count": saved_count
     }
+
+
+@router.get("/unmapped-ifs-summary")
+def get_unmapped_ifs_summary():
+    """
+    Returns summary statistics and groups of IFS catalog groups (Sales Groups)
+    that are present in IFS (invoice_output) but NOT mapped in division_mappings.
+    """
+    init_division_mappings_table()
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. Get all mapped sales groups from division_mappings
+            cursor.execute("""
+                SELECT LOWER(TRIM(sales_group)) as sg 
+                FROM division_mappings 
+                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
+            """)
+            mapped_sgs = set(r['sg'] for r in cursor.fetchall() if r.get('sg'))
+
+            # 2. Get distinct catalog groups from invoice_output
+            cursor.execute("""
+                SELECT 
+                    TRIM(catalog_group) as sales_group,
+                    COUNT(DISTINCT catalog_no) as item_count,
+                    COUNT(*) as invoice_count,
+                    COALESCE(SUM(net_dom_amount), 0) as total_net_amount,
+                    GROUP_CONCAT(DISTINCT TRIM(contract) SEPARATOR ', ') as contracts
+                FROM invoice_output
+                WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != ''
+                GROUP BY TRIM(catalog_group)
+                ORDER BY total_net_amount DESC;
+            """)
+            all_ifs_groups = cursor.fetchall()
+
+            unmapped_groups = []
+            for g in all_ifs_groups:
+                sg_name = g.get('sales_group') or ''
+                if sg_name.lower() not in mapped_sgs:
+                    unmapped_groups.append({
+                        "sales_group": sg_name,
+                        "item_count": int(g.get('item_count') or 0),
+                        "invoice_count": int(g.get('invoice_count') or 0),
+                        "total_net_amount": round(float(g.get('total_net_amount') or 0), 2),
+                        "contracts": g.get('contracts') or '-'
+                    })
+
+            total_unmapped_groups = len(unmapped_groups)
+            total_unmapped_items = sum(g['item_count'] for g in unmapped_groups)
+            total_unmapped_value = round(sum(g['total_net_amount'] for g in unmapped_groups), 2)
+
+        return {
+            "status": "success",
+            "total_unmapped_groups": total_unmapped_groups,
+            "total_unmapped_items": total_unmapped_items,
+            "total_unmapped_value": total_unmapped_value,
+            "groups": unmapped_groups
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/unmapped-ifs-items")
+def get_unmapped_ifs_items(
+    group: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    contract: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=500)
+):
+    """
+    Returns item-level breakdown (Product Part No, Name/Description, Price, Sales Value)
+    for unmapped IFS Sales Groups.
+    """
+    init_division_mappings_table()
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 1. Get all mapped sales groups from division_mappings
+            cursor.execute("""
+                SELECT LOWER(TRIM(sales_group)) as sg 
+                FROM division_mappings 
+                WHERE sales_group IS NOT NULL AND TRIM(sales_group) != '';
+            """)
+            mapped_sgs = set(r['sg'] for r in cursor.fetchall() if r.get('sg'))
+
+            # 2. Get unmapped group names
+            cursor.execute("""
+                SELECT DISTINCT TRIM(catalog_group) as sg 
+                FROM invoice_output 
+                WHERE catalog_group IS NOT NULL AND TRIM(catalog_group) != '';
+            """)
+            all_sgs = [r['sg'] for r in cursor.fetchall() if r.get('sg')]
+            unmapped_sg_names = [sg for sg in all_sgs if sg.lower() not in mapped_sgs]
+
+            if not unmapped_sg_names:
+                return {
+                    "status": "success",
+                    "total_count": 0,
+                    "page": page,
+                    "limit": limit,
+                    "total_pages": 1,
+                    "items": []
+                }
+
+            # Filter conditions
+            where_clauses = []
+            params = []
+
+            if group and group.strip() and group.strip().lower() != 'all':
+                where_clauses.append("TRIM(catalog_group) = %s")
+                params.append(group.strip())
+            else:
+                placeholders = ', '.join(['%s'] * len(unmapped_sg_names))
+                where_clauses.append(f"TRIM(catalog_group) IN ({placeholders})")
+                params.extend(unmapped_sg_names)
+
+            if search and search.strip():
+                s = f"%{search.strip()}%"
+                where_clauses.append("(catalog_no LIKE %s OR description LIKE %s OR catalog_group LIKE %s)")
+                params.extend([s, s, s])
+
+            if contract and contract.strip() and contract.strip().lower() != 'all':
+                where_clauses.append("UPPER(TRIM(contract)) = %s")
+                params.append(contract.strip().upper())
+
+            where_sql = " WHERE " + " AND ".join(where_clauses)
+
+            # Count total distinct item groups
+            count_sql = f"""
+                SELECT COUNT(*) as total FROM (
+                    SELECT 1 
+                    FROM invoice_output 
+                    {where_sql}
+                    GROUP BY TRIM(catalog_group), TRIM(catalog_no), TRIM(contract)
+                ) as sub;
+            """
+            cursor.execute(count_sql, params)
+            total_count = cursor.fetchone()['total'] or 0
+
+            # Pagination
+            offset = (page - 1) * limit
+            total_pages = (total_count + limit - 1) // limit if limit else 1
+
+            # Fetch items
+            items_sql = f"""
+                SELECT 
+                    TRIM(catalog_group) as sales_group,
+                    TRIM(catalog_no) as catalog_no,
+                    MAX(TRIM(description)) as description,
+                    TRIM(contract) as contract,
+                    COALESCE(SUM(invoiced_qty), 0) as total_qty,
+                    COALESCE(AVG(calculated_unit_price), 0) as avg_unit_price,
+                    COALESCE(SUM(net_dom_amount), 0) as total_net_amount,
+                    COUNT(*) as invoice_count,
+                    DATE(MAX(invoice_date)) as last_invoice_date
+                FROM invoice_output
+                {where_sql}
+                GROUP BY TRIM(catalog_group), TRIM(catalog_no), TRIM(contract)
+                ORDER BY total_net_amount DESC
+                LIMIT %s OFFSET %s;
+            """
+            cursor.execute(items_sql, params + [limit, offset])
+            rows = cursor.fetchall()
+
+            items = []
+            for r in rows:
+                qty = float(r.get('total_qty') or 0)
+                tot_amt = float(r.get('total_net_amount') or 0)
+                avg_price = float(r.get('avg_unit_price') or 0)
+                if avg_price == 0 and qty > 0:
+                    avg_price = tot_amt / qty
+
+                inv_date = str(r.get('last_invoice_date') or '').split(' ')[0] if r.get('last_invoice_date') else '-'
+
+                items.append({
+                    "sales_group": r.get('sales_group') or '',
+                    "catalog_no": r.get('catalog_no') or '',
+                    "description": r.get('description') or '',
+                    "contract": r.get('contract') or '',
+                    "total_qty": round(qty, 2),
+                    "unit_price": round(avg_price, 2),
+                    "total_net_amount": round(tot_amt, 2),
+                    "invoice_count": int(r.get('invoice_count') or 0),
+                    "last_invoice_date": inv_date,
+                    "invoice_date": inv_date
+                })
+
+        return {
+            "status": "success",
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "items": items
+        }
+    finally:
+        conn.close()
+
 

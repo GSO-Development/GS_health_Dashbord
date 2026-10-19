@@ -259,8 +259,8 @@ const UploadDisBudgetPage = () => {
       </div>
 
       {/* Main Datatable with Target Columns Only */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 310px)', overflowY: 'auto' }}>
+      <div className="glass-card table-glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="main-table-scroll-wrapper" style={{ overflowX: 'auto', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', fontWeight: 800 }}>
               <tr style={{ color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>

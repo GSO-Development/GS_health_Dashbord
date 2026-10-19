@@ -72,6 +72,70 @@ def get_total_budget(
     }
 
 
+@router.post("/total-budget", dependencies=[Depends(require_admin)])
+def create_total_budget_item(payload: dict = Body(...)):
+    conn = get_db_connection()
+    try:
+        fiscal_year = str(payload.get('fiscal_year') or 'FY 2026/27').strip()
+        range_name = str(payload.get('range_name') or '').strip()
+        sales_group = str(payload.get('sales_group') or '').strip()
+        part_no = str(payload.get('part_no') or '').strip()
+        product_sku = str(payload.get('product_sku') or '').strip()
+        cost_center = str(payload.get('cost_center') or '').strip()
+
+        if not range_name:
+            raise HTTPException(status_code=400, detail="Range Name is required.")
+        if not sales_group:
+            raise HTTPException(status_code=400, detail="Sales Group is required.")
+
+        month_vals = {}
+        for m in MONTH_NAMES:
+            val = payload.get(m)
+            if val is not None and str(val).strip() != '':
+                try:
+                    month_vals[m] = float(val)
+                except (ValueError, TypeError):
+                    month_vals[m] = 0.0
+            else:
+                month_vals[m] = 0.0
+
+        total_calc = sum(month_vals.values())
+
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO total_budget (
+                    fiscal_year, range_name, sales_group, part_no, product_sku, cost_center,
+                    april, may, june, july, august, september, october, november, december, january, february, march, total
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                );
+            """, (
+                fiscal_year, range_name, sales_group, part_no, product_sku, cost_center,
+                month_vals['april'], month_vals['may'], month_vals['june'], month_vals['july'],
+                month_vals['august'], month_vals['september'], month_vals['october'], month_vals['november'],
+                month_vals['december'], month_vals['january'], month_vals['february'], month_vals['march'],
+                total_calc
+            ))
+            new_id = cursor.lastrowid
+
+            if sales_group and range_name:
+                cursor.execute("""
+                    INSERT IGNORE INTO division_mappings (sales_group, range_name)
+                    VALUES (%s, %s);
+                """, (sales_group, range_name))
+
+            conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Successfully created new annual budget record #{new_id}!",
+        "item_id": new_id
+    }
+
+
 @router.put("/total-budget/{item_id}", dependencies=[Depends(require_admin)])
 def update_total_budget_item(item_id: int, payload: dict = Body(...)):
     conn = get_db_connection()
@@ -136,6 +200,26 @@ def update_total_budget_item(item_id: int, payload: dict = Body(...)):
     return {
         "status": "success",
         "message": f"Successfully updated budget row #{item_id}!",
+        "item_id": item_id
+    }
+
+
+@router.delete("/total-budget/{item_id}", dependencies=[Depends(require_admin)])
+def delete_total_budget_item(item_id: int):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM total_budget WHERE id = %s;", (item_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Total budget item with ID {item_id} not found.")
+            cursor.execute("DELETE FROM total_budget WHERE id = %s;", (item_id,))
+            conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Successfully deleted budget record #{item_id}!",
         "item_id": item_id
     }
 

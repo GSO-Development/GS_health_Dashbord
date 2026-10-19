@@ -20,9 +20,72 @@ MONTH_NAMES = {
     "february": "February 2027", "march": "March 2027"
 }
 
-def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    m_clean = month.lower().strip() if isinstance(month, str) else "july"
-    selected_month = m_clean if m_clean in MONTH_MAPPING else "july"
+def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, months: Optional[str] = None):
+    # Check if multiple months passed via `months` or comma in `month`
+    raw_input = months if (isinstance(months, str) and months.strip()) else month
+    if isinstance(raw_input, str) and ',' in raw_input:
+        m_list = [m.lower().strip() for m in raw_input.split(',') if m.lower().strip() in MONTH_MAPPING]
+    elif isinstance(raw_input, str) and raw_input.lower().strip() in MONTH_MAPPING:
+        m_list = [raw_input.lower().strip()]
+    else:
+        m_list = ["july"]
+
+    if not m_list:
+        m_list = ["july"]
+
+    is_multi_month = len(m_list) > 1
+
+    FY_ORDER = ["april", "may", "june", "july", "august", "september", "october", "november", "december", "january", "february", "march"]
+    if is_multi_month:
+        m_list = sorted(m_list, key=lambda x: FY_ORDER.index(x) if x in FY_ORDER else 99)
+
+    if is_multi_month:
+        total_days = 0
+        month_spans = []
+        for m in m_list:
+            mnum = MONTH_MAPPING[m]
+            yr = 2027 if mnum in [1, 2, 3] else 2026
+            _, dim = calendar.monthrange(yr, mnum)
+            total_days += dim
+            month_spans.append({
+                "month": m,
+                "month_num": mnum,
+                "year": yr,
+                "days_in_month": dim,
+                "start_date": f"{yr}-{mnum:02d}-01",
+                "end_date": f"{yr}-{mnum:02d}-{dim:02d}"
+            })
+
+        last_m = m_list[-1]
+        last_mnum = MONTH_MAPPING[last_m]
+        last_yr = 2027 if last_mnum in [1, 2, 3] else 2026
+
+        first_m = m_list[0]
+        first_mnum = MONTH_MAPPING[first_m]
+        first_yr = 2027 if first_mnum in [1, 2, 3] else 2026
+
+        min_start = month_spans[0]["start_date"]
+        max_end = month_spans[-1]["end_date"]
+
+        month_names_str = ", ".join([MONTH_NAMES[m].split()[0] for m in m_list])
+        label = f"{month_names_str} ({len(m_list)} Months)"
+
+        return {
+            "selected_month": m_list[0],
+            "month_list": m_list,
+            "is_multi_month": True,
+            "month_spans": month_spans,
+            "month_num": last_mnum,
+            "year": last_yr,
+            "days_in_month": total_days,
+            "filter_start": min_start,
+            "filter_end": max_end,
+            "days_count": total_days,
+            "is_single": False,
+            "label": label
+        }
+
+    selected_month = m_list[0]
     month_num = MONTH_MAPPING[selected_month]
     month_name = MONTH_NAMES[selected_month]
     year = 2027 if month_num in [1, 2, 3] else 2026
@@ -59,6 +122,16 @@ def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Opti
             is_single = False
         return {
             "selected_month": selected_month,
+            "month_list": [selected_month],
+            "is_multi_month": False,
+            "month_spans": [{
+                "month": selected_month,
+                "month_num": month_num,
+                "year": year,
+                "days_in_month": days_in_month,
+                "start_date": s_date,
+                "end_date": e_date
+            }],
             "month_num": month_num,
             "year": year,
             "days_in_month": days_in_month,
@@ -71,6 +144,16 @@ def resolve_date_filter(month: str, date: Optional[str] = None, start_date: Opti
 
     return {
         "selected_month": selected_month,
+        "month_list": [selected_month],
+        "is_multi_month": False,
+        "month_spans": [{
+            "month": selected_month,
+            "month_num": month_num,
+            "year": year,
+            "days_in_month": days_in_month,
+            "start_date": f"{year}-{month_num:02d}-01",
+            "end_date": f"{year}-{month_num:02d}-{days_in_month:02d}"
+        }],
         "month_num": month_num,
         "year": year,
         "days_in_month": days_in_month,
@@ -117,21 +200,37 @@ def compute_distri_range_dataset(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     backlog_mode: str = "without",
-    contracts: Optional[str] = None
+    contracts: Optional[str] = None,
+    months: Optional[str] = None
 ) -> Dict[str, Any]:
     b_mode = (backlog_mode or "without").lower().strip()
     if b_mode not in ["with", "without", "only"]:
         b_mode = "without"
 
-    df_info = resolve_date_filter(month, date, start_date, end_date)
+    df_info = resolve_date_filter(month, date, start_date, end_date, months=months)
     selected_month = df_info["selected_month"]
+    month_list = df_info.get("month_list", [selected_month])
+    is_multi_month = df_info.get("is_multi_month", False)
+    month_spans = df_info.get("month_spans", [])
     month_num = df_info["month_num"]
     year = df_info["year"]
     days_in_month = df_info["days_in_month"]
     filter_start = df_info["filter_start"]
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
-    has_date_filter = filter_start is not None
+    has_date_filter = filter_start is not None and not is_multi_month
+
+    end_of_month_str = f"{year}-{month_num:02d}-{days_in_month:02d}" if not is_multi_month else month_spans[-1]["end_date"]
+    m_start_date = filter_start if filter_start else (f"{year}-{month_num:02d}-01" if not is_multi_month else month_spans[0]["start_date"])
+    m_end_date = filter_end if filter_end else end_of_month_str
+
+    # Cumulative calculation: From April (FY Start) up to the LAST selected month in FY order
+    last_month = month_list[-1]
+    last_mnum = MONTH_MAPPING[last_month]
+    last_yr = 2027 if last_mnum in [1, 2, 3] else 2026
+    _, last_dim = calendar.monthrange(last_yr, last_mnum)
+    cum_end_date = filter_end if (has_date_filter and not is_multi_month) else f"{last_yr}-{last_mnum:02d}-{last_dim:02d}"
+    month_first_date_str = f"{year}-{month_num:02d}-01" if not is_multi_month else month_spans[0]["start_date"]
 
     contract_list = []
     if isinstance(contracts, str) and contracts.strip():
@@ -210,16 +309,33 @@ def compute_distri_range_dataset(
             if r.get('part_no'):
                 part_to_div[r['part_no'].strip().lower()] = (r['division_name'] or '', r['subgroup_name'] or '', r['product_sku'] or '')
 
-        # 1. Primary target & RD target from dis_budget
-        cursor.execute("""
-            SELECT 
-                TRIM(product_id) as pid,
-                COALESCE(SUM(primary_target), 0) as m_pri_tgt,
-                COALESCE(SUM(rd_target), 0) as m_rd_tgt
-            FROM dis_budget
-            WHERE MONTH(month) = %s OR month LIKE %s OR LOWER(month) = %s
-            GROUP BY TRIM(product_id);
-        """, (month_num, f"%-{month_num:02d}-%", selected_month))
+        # 1. Primary target & RD target from dis_budget (Current Month or Multi-Month)
+        if is_multi_month:
+            b_conds = []
+            b_params = []
+            for span in month_spans:
+                b_conds.append("((YEAR(month) = %s AND MONTH(month) = %s) OR LOWER(month) = %s)")
+                b_params.extend([span["year"], span["month_num"], span["month"]])
+            b_where = " OR ".join(b_conds)
+            cursor.execute(f"""
+                SELECT 
+                    TRIM(product_id) as pid,
+                    COALESCE(SUM(primary_target), 0) as m_pri_tgt,
+                    COALESCE(SUM(rd_target), 0) as m_rd_tgt
+                FROM dis_budget
+                WHERE {b_where}
+                GROUP BY TRIM(product_id);
+            """, b_params)
+        else:
+            cursor.execute("""
+                SELECT 
+                    TRIM(product_id) as pid,
+                    COALESCE(SUM(primary_target), 0) as m_pri_tgt,
+                    COALESCE(SUM(rd_target), 0) as m_rd_tgt
+                FROM dis_budget
+                WHERE (YEAR(month) = %s AND MONTH(month) = %s) OR LOWER(month) = %s
+                GROUP BY TRIM(product_id);
+            """, (year, month_num, selected_month))
         dis_budget_map = {}
         for r in cursor.fetchall():
             pid = r['pid']
@@ -227,24 +343,44 @@ def compute_distri_range_dataset(
             m_rd = float(r['m_rd_tgt'] or 0.0)
             dis_budget_map[pid] = {
                 'pid': pid,
-                'm_pri_tgt': (m_pri / days_in_month * days_count) if has_date_filter else m_pri,
-                'm_rd_tgt': (m_rd / days_in_month * days_count) if has_date_filter else m_rd
+                'm_pri_tgt': m_pri,
+                'm_rd_tgt': m_rd
             }
 
-        # 2. Cumulative Primary target & RD target from dis_budget
+        # 2. Cumulative Primary target & RD target from dis_budget (From 2026-04-01 up to cum_end_date)
         cursor.execute("""
             SELECT 
                 TRIM(product_id) as pid,
                 COALESCE(SUM(primary_target), 0) as c_pri_tgt,
                 COALESCE(SUM(rd_target), 0) as c_rd_tgt
             FROM dis_budget
-            WHERE MONTH(month) <= %s
+            WHERE DATE(month) >= '2026-04-01' AND DATE(month) <= %s
             GROUP BY TRIM(product_id);
-        """, (month_num,))
-        dis_budget_c_map = {r['pid']: r for r in cursor.fetchall()}
+        """, (cum_end_date,))
+        dis_budget_c_map = {
+            r['pid']: {
+                'c_pri_tgt': float(r['c_pri_tgt'] or 0.0),
+                'c_rd_tgt': float(r['c_rd_tgt'] or 0.0)
+            } for r in cursor.fetchall()
+        }
 
-        # 3. RD actual from axienta_data
-        if has_date_filter:
+        # 3. RD actual from axienta_data (Current Month / Date Range / Multi-Month)
+        if is_multi_month:
+            rd_conds = []
+            rd_params = []
+            for span in month_spans:
+                rd_conds.append("(DATE(entry_date) >= %s AND DATE(entry_date) <= %s)")
+                rd_params.extend([span["start_date"], span["end_date"]])
+            rd_where = " OR ".join(rd_conds)
+            cursor.execute(f"""
+                SELECT 
+                    TRIM(product_id) as pid,
+                    COALESCE(SUM(value), 0) as m_rd_act
+                FROM axienta_data
+                WHERE {rd_where}
+                GROUP BY TRIM(product_id);
+            """, rd_params)
+        else:
             cursor.execute("""
                 SELECT 
                     TRIM(product_id) as pid,
@@ -252,33 +388,42 @@ def compute_distri_range_dataset(
                 FROM axienta_data
                 WHERE DATE(entry_date) >= %s AND DATE(entry_date) <= %s
                 GROUP BY TRIM(product_id);
-            """, (filter_start, filter_end))
-        else:
-            cursor.execute("""
-                SELECT 
-                    TRIM(product_id) as pid,
-                    COALESCE(SUM(value), 0) as m_rd_act
-                FROM axienta_data
-                WHERE MONTH(entry_date) = %s AND YEAR(entry_date) = %s
-                GROUP BY TRIM(product_id);
-            """, (month_num, year))
+            """, (m_start_date, m_end_date))
         axienta_m_map = {r['pid']: float(r['m_rd_act'] or 0.0) for r in cursor.fetchall()}
 
-        # 4. Cumulative RD actual from axienta_data
+        # 4. Cumulative RD actual from axienta_data (2026-04-01 to cum_end_date)
         cursor.execute("""
             SELECT 
                 TRIM(product_id) as pid,
                 COALESCE(SUM(value), 0) as c_rd_act
             FROM axienta_data
-            WHERE MONTH(entry_date) <= %s AND YEAR(entry_date) = %s
+            WHERE DATE(entry_date) >= '2026-04-01' AND DATE(entry_date) <= %s
             GROUP BY TRIM(product_id);
-        """, (month_num, year))
+        """, (cum_end_date,))
         axienta_c_map = {r['pid']: float(r['c_rd_act'] or 0.0) for r in cursor.fetchall()}
 
-        # 5. Primary actual from invoice_output
+        # 5. Primary actual from invoice_output (Current Month / Date Range / Multi-Month)
         c_list = list(contract_to_range.keys())
         c_filter_sql = f"OR LOWER(TRIM(contract)) IN ({','.join(['%s']*len(c_list))})" if c_list else ""
-        if has_date_filter:
+        if is_multi_month:
+            inv_conds = []
+            inv_params = []
+            for span in month_spans:
+                inv_conds.append("(DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s)")
+                inv_params.extend([span["start_date"], span["end_date"]])
+            inv_where = " OR ".join(inv_conds)
+            cursor.execute(f"""
+                SELECT 
+                    TRIM(catalog_no) as pid,
+                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
+                    TRIM(COALESCE(catalog_group, '')) as sg,
+                    COALESCE(SUM(net_dom_amount), 0) as m_inv
+                FROM invoice_output
+                WHERE ({inv_where})
+                  AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
+                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
+            """, inv_params + c_list + c_params)
+        else:
             cursor.execute(f"""
                 SELECT 
                     TRIM(catalog_no) as pid,
@@ -289,19 +434,7 @@ def compute_distri_range_dataset(
                 WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s
                   AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
                 GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
-            """, [filter_start, filter_end] + c_list + c_params)
-        else:
-            cursor.execute(f"""
-                SELECT 
-                    TRIM(catalog_no) as pid,
-                    UPPER(TRIM(COALESCE(contract, ''))) as contract_code,
-                    TRIM(COALESCE(catalog_group, '')) as sg,
-                    COALESCE(SUM(net_dom_amount), 0) as m_inv
-                FROM invoice_output
-                WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s
-                  AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
-                GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
-            """, [month_num, year] + c_list + c_params)
+            """, [m_start_date, m_end_date] + c_list + c_params)
         inv_m_map = {}
         for r in cursor.fetchall():
             p_no = r['pid']
@@ -325,7 +458,7 @@ def compute_distri_range_dataset(
             if d_name and d_name in official_ranges:
                 inv_m_map[(d_name, s_name, p_no)] = inv_m_map.get((d_name, s_name, p_no), 0.0) + amt
 
-        # 6. Cumulative Primary actual from invoice_output
+        # 6. Cumulative Primary actual from invoice_output (2026-04-01 to cum_end_date)
         cursor.execute(f"""
             SELECT 
                 TRIM(catalog_no) as pid,
@@ -333,10 +466,10 @@ def compute_distri_range_dataset(
                 TRIM(COALESCE(catalog_group, '')) as sg,
                 COALESCE(SUM(net_dom_amount), 0) as c_inv
             FROM invoice_output
-            WHERE MONTH(invoice_date) <= %s AND YEAR(invoice_date) = %s
+            WHERE DATE(invoice_date) >= '2026-04-01' AND DATE(invoice_date) <= %s
               AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
             GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
-        """, [month_num, year] + c_list + c_params)
+        """, [cum_end_date] + c_list + c_params)
         inv_c_map = {}
         for r in cursor.fetchall():
             p_no = r['pid']
@@ -373,7 +506,7 @@ def compute_distri_range_dataset(
                   AND UPPER(TRIM(COALESCE(line_state, ''))) = 'RESERVED'
                   AND (UPPER(TRIM(cust_grp)) = 'DISTRI' {c_filter_sql}) {c_clause}
                 GROUP BY TRIM(catalog_no), UPPER(TRIM(COALESCE(contract, ''))), TRIM(COALESCE(catalog_group, ''));
-            """, [filter_start, filter_end] + c_list + c_params)
+            """, [m_start_date, m_end_date] + c_list + c_params)
         else:
             cursor.execute(f"""
                 SELECT 
@@ -745,6 +878,10 @@ def compute_distri_range_dataset(
         "end_date": filter_end,
         "days_count": days_count,
         "month_label": df_info["label"],
+        "month_list": month_list,
+        "is_multi_month": is_multi_month,
+        "last_month": last_month,
+        "cum_end_date": cum_end_date,
         "backlog_mode": b_mode,
         "grand_total": {
             "p_tgt": round(g_pri_tgt, 2),
@@ -784,7 +921,8 @@ def get_distri_range_fy(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     backlog_mode: Optional[str] = Query("without"),
-    contracts: Optional[str] = Query(None)
+    contracts: Optional[str] = Query(None),
+    months: Optional[str] = Query(None)
 ):
     dataset = compute_distri_range_dataset(
         month=month or "july",
@@ -792,7 +930,8 @@ def get_distri_range_fy(
         start_date=start_date,
         end_date=end_date,
         backlog_mode=backlog_mode or "without",
-        contracts=contracts
+        contracts=contracts,
+        months=months
     )
     return {
         "selected_month": dataset["selected_month"],
@@ -801,6 +940,10 @@ def get_distri_range_fy(
         "end_date": dataset["end_date"],
         "days_count": dataset["days_count"],
         "month_label": dataset["month_label"],
+        "month_list": dataset.get("month_list", [dataset["selected_month"]]),
+        "is_multi_month": dataset.get("is_multi_month", False),
+        "last_month": dataset.get("last_month", dataset["selected_month"]),
+        "cum_end_date": dataset.get("cum_end_date"),
         "grand_total": dataset["grand_total"],
         "tree": dataset["tree"]
     }
@@ -814,7 +957,8 @@ def get_dis_dashboard_fy_overview(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     backlog_mode: Optional[str] = Query("without"),
-    contracts: Optional[str] = Query(None)
+    contracts: Optional[str] = Query(None),
+    months: Optional[str] = Query(None)
 ):
     dataset = compute_distri_range_dataset(
         month=month or "july",
@@ -822,7 +966,8 @@ def get_dis_dashboard_fy_overview(
         start_date=start_date,
         end_date=end_date,
         backlog_mode=backlog_mode or "without",
-        contracts=contracts
+        contracts=contracts,
+        months=months
     )
     gt = dataset["grand_total"]
     pri_actual = gt["pri_actual"]
@@ -851,6 +996,9 @@ def get_dis_dashboard_fy_overview(
         "end_date": dataset["end_date"],
         "days_count": dataset["days_count"],
         "month_label": dataset["month_label"],
+        "month_list": dataset.get("month_list", [dataset["selected_month"]]),
+        "is_multi_month": dataset.get("is_multi_month", False),
+        "last_month": dataset.get("last_month", dataset["selected_month"]),
         "backlog_mode": dataset["backlog_mode"],
         "primary_sales": {
             "actual": pri_actual,
@@ -886,29 +1034,35 @@ def get_dashboard_fy_overview(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     backlog_mode: Optional[str] = Query("without"),
-    contracts: Optional[str] = Query(None)
+    contracts: Optional[str] = Query(None),
+    months: Optional[str] = Query(None)
 ):
-    df_info = resolve_date_filter(month, date, start_date, end_date)
+    df_info = resolve_date_filter(month, date, start_date, end_date, months=months)
     selected_month = df_info["selected_month"]
+    month_list = df_info.get("month_list", [selected_month])
+    is_multi_month = df_info.get("is_multi_month", False)
     month_num = df_info["month_num"]
     year = df_info["year"]
     days_in_month = df_info["days_in_month"]
     filter_start = df_info["filter_start"]
     filter_end = df_info["filter_end"]
     days_count = df_info["days_count"]
-    has_date_filter = filter_start is not None
+    has_date_filter = filter_start is not None and not is_multi_month
     mode = (backlog_mode or "without").lower().strip()
     if mode not in ["with", "without", "only"]:
         mode = "without"
 
+    effective_month_param = ",".join(month_list) if is_multi_month else selected_month
+
     # 1. Obtain Distributor Primary and RD metrics from the unified calculation
     dis_dataset = compute_distri_range_dataset(
-        month=month or "july",
+        month=effective_month_param,
         date=date,
         start_date=start_date,
         end_date=end_date,
         backlog_mode=mode,
-        contracts=contracts
+        contracts=contracts,
+        months=months
     )
     dis_gt = dis_dataset["grand_total"]
     dis_pri_target = dis_gt["pri_target"]
@@ -923,86 +1077,42 @@ def get_dashboard_fy_overview(
     dis_rd_pct = int(round(dis_gt["rd_pct"]))
     dis_rd_variance = round(dis_rd_actual - dis_rd_target, 2)
 
-    # 2. Total Budget Calculation (Visible on Total Range FY)
-    contract_list = []
-    if isinstance(contracts, str) and contracts.strip():
-        contract_list = [c.strip().upper() for c in contracts.split(",") if c.strip()]
+    # 2. Total Budget Calculation (Strictly mapped from Map Divisions via Total Range FY engine)
+    from app.routers.reports import get_total_range_fy
+    tr_dataset = get_total_range_fy(
+        month=effective_month_param,
+        date=date,
+        start_date=start_date,
+        end_date=end_date,
+        backlog_mode=mode,
+        contracts=contracts,
+        months=months
+    )
+    tr_summary = tr_dataset.get("summary_totals", {})
+    total_target_val = float(tr_summary.get("m_budget") or 0.0)
+    total_actual_val = float(tr_summary.get("m_actual") or 0.0)
+    fy_actual_val = float(tr_summary.get("a_actual") or 0.0)
+    annual_target = float(tr_summary.get("a_budget") or 0.0)
 
-    if contract_list:
-        placeholders = ', '.join(['%s'] * len(contract_list))
-        c_clause = f"AND UPPER(TRIM(contract)) IN ({placeholders})"
-        c_params = list(contract_list)
-    else:
-        c_clause = "AND (UPPER(TRIM(contract)) NOT IN ('GSIEX', 'GSTEA', 'LTS') OR contract IS NULL)"
-        c_params = []
-
-    conn = get_db_connection()
-    with conn.cursor() as cursor:
-        # Total Budget monthly target for items visible on total_range
-        cursor.execute(f"""
-            SELECT COALESCE(SUM(b.{selected_month}), 0) as target, COALESCE(SUM(b.total), 0) as annual_target 
-            FROM total_budget b
-            LEFT JOIN division_mappings m ON LOWER(TRIM(b.sales_group)) = LOWER(TRIM(m.sales_group))
-            WHERE (m.visibility IS NULL OR m.visibility = '' OR m.visibility = 'both' OR m.visibility = 'total_range');
-        """)
-        tb_target_row = cursor.fetchone()
-        monthly_total_target = float(tb_target_row['target'] or 0.0)
-        annual_target = float(tb_target_row['annual_target'] or 0.0)
-        total_target_val = (monthly_total_target / days_in_month * days_count) if has_date_filter else monthly_total_target
-
-        # Invoiced Net Amount for items visible on total_range
-        if has_date_filter:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
-                FROM invoice_output 
-                WHERE DATE(invoice_date) >= %s AND DATE(invoice_date) <= %s {c_clause};
-            """, [filter_start, filter_end] + c_params)
-        else:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(net_dom_amount), 0) as inv_net 
-                FROM invoice_output 
-                WHERE MONTH(invoice_date) = %s AND YEAR(invoice_date) = %s {c_clause};
-            """, [month_num, year] + c_params)
-        inv_net = float(cursor.fetchone()['inv_net'] or 0.0)
-
-        # Backlog value for items visible on total_range (Only Reserved Orders)
-        if has_date_filter:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
-                FROM outstanding_output 
-                WHERE DATE(planned_delivery_date) >= %s AND DATE(planned_delivery_date) <= %s
-                  AND UPPER(TRIM(COALESCE(line_state, ''))) = 'RESERVED' {c_clause};
-            """, [filter_start, filter_end] + c_params)
-        else:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM(backlog_value_base_curr), 0) as back_val 
-                FROM outstanding_output 
-                WHERE UPPER(TRIM(COALESCE(line_state, ''))) = 'RESERVED' {c_clause};
-            """, c_params)
-        out_back_val = float(cursor.fetchone()['back_val'] or 0.0)
-
-        # Full Fiscal Year 2026/2027 Invoiced (April 2026 - March 2027) for Annual Budget vs Actual
-        cursor.execute(f"""
-            SELECT COALESCE(SUM(net_dom_amount), 0) as fy_inv 
-            FROM invoice_output 
-            WHERE (
-                (YEAR(invoice_date) = 2026 AND MONTH(invoice_date) >= 4) OR
-                (YEAR(invoice_date) = 2027 AND MONTH(invoice_date) <= 3)
-            ) {c_clause};
-        """, c_params)
-        fy_inv_net = float(cursor.fetchone()['fy_inv'] or 0.0)
-
-    conn.close()
-
-    if mode == "without":
-        total_actual_val = inv_net
-        fy_actual_val = fy_inv_net
-    elif mode == "only":
-        total_actual_val = out_back_val
-        fy_actual_val = out_back_val
-    else:
-        total_actual_val = inv_net + out_back_val
-        fy_actual_val = fy_inv_net + out_back_val
+    # Calculate mapped invoiced vs backlog breakdown
+    if mode == "with":
+        tr_without = get_total_range_fy(
+            month=effective_month_param,
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            backlog_mode="without",
+            contracts=contracts,
+            months=months
+        )
+        inv_net = float(tr_without.get("summary_totals", {}).get("m_actual") or 0.0)
+        out_back_val = max(0.0, total_actual_val - inv_net)
+    elif mode == "without":
+        inv_net = total_actual_val
+        out_back_val = 0.0
+    else:  # "only"
+        inv_net = 0.0
+        out_back_val = total_actual_val
 
     total_pct = int(round((total_actual_val / total_target_val) * 100)) if total_target_val > 0 else 0
     total_variance = round(total_actual_val - total_target_val, 2)
@@ -1020,6 +1130,8 @@ def get_dashboard_fy_overview(
 
     return {
         "selected_month": selected_month,
+        "selected_months": month_list,
+        "is_multi_month": is_multi_month,
         "selected_date": filter_start if df_info["is_single"] else None,
         "start_date": filter_start,
         "end_date": filter_end,
@@ -1061,7 +1173,7 @@ def get_dashboard_fy_overview(
             "actual": round(fy_actual_val, 2),
             "month_actual": round(total_actual_val, 2),
             "month_target": round(total_target_val, 2),
-            "month_name": selected_month.capitalize(),
+            "month_name": df_info["label"],
             "pct": annual_pct,
             "month_pct": total_pct,
         }

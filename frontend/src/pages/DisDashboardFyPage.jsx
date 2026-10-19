@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { PieChart, RefreshCw, Layers, Package, TrendingUp } from 'lucide-react';
-import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
+import { PieChart, RefreshCw, Layers, Package, TrendingUp, Calendar, CalendarRange, Check } from 'lucide-react';
+import MonthCalendarBar, { getCurrentMonthKey, MONTH_TABS } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -115,19 +115,20 @@ const QuarterComboChart = ({ title, data = [], actKey = 'pri_act', tgtKey = 'pri
   const maxVal = Math.max(...months.map(m => Math.max(m[tgtKey] || 0, m[actKey] || 0)), 1000000) * 1.15;
 
   const chartWidth = 720;
-  const chartHeight = 250;
+  const chartHeight = 270;
   const paddingX = 35;
-  const paddingY = 20;
+  const paddingTop = 20;
+  const paddingBottom = 42;
   const usableWidth = chartWidth - paddingX * 2;
-  const usableHeight = chartHeight - paddingY * 2;
+  const usableHeight = chartHeight - paddingTop - paddingBottom;
   const stepX = usableWidth / 12;
-  const barWidth = 26;
+  const barWidth = 24;
 
   const points = months.map((m, idx) => {
     const cx = paddingX + idx * stepX + stepX / 2;
-    const cy = paddingY + usableHeight - ((m[actKey] || 0) / maxVal) * usableHeight;
+    const cy = paddingTop + usableHeight - ((m[actKey] || 0) / maxVal) * usableHeight;
     const tgtHeight = ((m[tgtKey] || 0) / maxVal) * usableHeight;
-    const tgtY = paddingY + usableHeight - tgtHeight;
+    const tgtY = paddingTop + usableHeight - tgtHeight;
     return { cx, cy, tgtHeight, tgtY, ...m };
   });
 
@@ -172,7 +173,7 @@ const QuarterComboChart = ({ title, data = [], actKey = 'pri_act', tgtKey = 'pri
       </div>
 
       {/* SVG Container */}
-      <div style={{ position: 'relative', width: '100%', height: '260px', flex: 1, display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', width: '100%', height: '270px', flex: 1, display: 'flex', alignItems: 'center' }}>
         <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
           <defs>
             <linearGradient id={`barGrad_${actKey}`} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -187,7 +188,7 @@ const QuarterComboChart = ({ title, data = [], actKey = 'pri_act', tgtKey = 'pri
 
           {/* Horizontal Grid Lines */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
-            const y = paddingY + usableHeight * (1 - ratio);
+            const y = paddingTop + usableHeight * (1 - ratio);
             return (
               <line
                 key={i}
@@ -258,11 +259,13 @@ const QuarterComboChart = ({ title, data = [], actKey = 'pri_act', tgtKey = 'pri
             <text
               key={`label_${idx}`}
               x={pt.cx}
-              y={chartHeight - 4}
+              y={chartHeight - 8}
               textAnchor="middle"
-              fill={hoveredIdx === idx ? lineColor : '#64748b'}
-              fontSize="12"
-              fontWeight="800"
+              fill={hoveredIdx === idx ? lineColor : '#1e293b'}
+              fontSize="16"
+              fontWeight={hoveredIdx === idx ? '900' : '800'}
+              letterSpacing="0.01em"
+              style={{ transition: 'all 0.15s ease' }}
             >
               {pt.month_short}
             </text>
@@ -314,6 +317,8 @@ const QuarterComboChart = ({ title, data = [], actKey = 'pri_act', tgtKey = 'pri
 const DisDashboardFyPage = () => {
   const { isAdmin } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+  const [isMultiMonthMode, setIsMultiMonthMode] = useState(false);
+  const [selectedMonths, setSelectedMonths] = useState([getCurrentMonthKey()]);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // default 'with' (Sales / Invoices + Reserved)
@@ -321,18 +326,40 @@ const DisDashboardFyPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isCurrentMonth = selectedMonth === getCurrentMonthKey();
-  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const effectiveBacklogMode = (isCurrentMonth || isMultiMonthMode) ? backlogMode : 'without';
+
+  const toggleMonthSelection = (mKey) => {
+    setSelectedMonths(prev => {
+      if (prev.includes(mKey)) {
+        if (prev.length === 1) return prev; // Keep at least one
+        return prev.filter(k => k !== mKey);
+      } else {
+        return [...prev, mKey];
+      }
+    });
+  };
 
   const fetchDisDashboardData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, backlog_mode: effectiveBacklogMode };
-      if (startDate && endDate) {
-        if (startDate === endDate) {
-          params.date = startDate;
+      const params = { backlog_mode: effectiveBacklogMode };
+      if (isMultiMonthMode) {
+        if (selectedMonths.length > 0) {
+          params.months = selectedMonths.join(',');
+          params.month = selectedMonths.join(',');
         } else {
-          params.start_date = startDate;
+          params.month = getCurrentMonthKey();
+        }
+      } else {
+        params.month = selectedMonth;
+        if (startDate && endDate) {
+          if (startDate === endDate) {
+            params.date = startDate;
+          } else {
+            params.start_date = startDate;
+            params.end_date = endDate;
+          }
         }
       }
       if (selectedContracts.length > 0) {
@@ -351,7 +378,7 @@ const DisDashboardFyPage = () => {
 
   useEffect(() => {
     fetchDisDashboardData();
-  }, [selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
+  }, [isMultiMonthMode, selectedMonths, selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
 
   const pri = data?.primary_sales || { actual: 783909774.55, target: 80800000, pct: 970, variance: 703109774.55 };
   const rd = data?.rd_sales || { actual: 22494390.46, target: 80800000, pct: 28, variance: -58305609.54 };
@@ -384,8 +411,80 @@ const DisDashboardFyPage = () => {
         </div>
       </div>
 
-      {/* Backlog Mode Switcher (Visible ONLY for Current Month) */}
-      {isCurrentMonth && (
+      {/* ─── Period Selection Mode: Single Month vs Select Multi Month ─── */}
+      <div className="glass-card" style={{ padding: '0.65rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
+            Period View:
+          </span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: isMultiMonthMode ? 'var(--gsh-teal)' : 'var(--gsh-red)' }}>
+            {isMultiMonthMode ? `● Multi-Month (${selectedMonths.length} Month${selectedMonths.length > 1 ? 's' : ''} Selected)` : `● Single Month (${selectedMonth.toUpperCase()})`}
+          </span>
+        </div>
+
+        <div style={{ display: 'inline-flex', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '3px', gap: '3px', boxShadow: 'var(--shadow-sm)' }}>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setIsMultiMonthMode(false)}
+            style={{
+              padding: '0.35rem 0.95rem',
+              borderRadius: '6px',
+              border: !isMultiMonthMode ? '1px solid var(--gsh-red)' : 'none',
+              background: !isMultiMonthMode ? 'linear-gradient(135deg, var(--gsh-red), #990012)' : 'transparent',
+              color: !isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              boxShadow: !isMultiMonthMode ? '0 2px 6px rgba(200, 16, 46, 0.25)' : 'none'
+            }}
+          >
+            <Calendar style={{ width: '14px', height: '14px' }} />
+            Single Month (MTD / Day)
+          </button>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              setIsMultiMonthMode(true);
+              if (selectedMonths.length === 0) {
+                setSelectedMonths([selectedMonth]);
+              }
+            }}
+            style={{
+              padding: '0.35rem 0.95rem',
+              borderRadius: '6px',
+              border: isMultiMonthMode ? '1px solid var(--gsh-teal)' : 'none',
+              background: isMultiMonthMode ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'transparent',
+              color: isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              boxShadow: isMultiMonthMode ? '0 2px 8px rgba(0, 168, 150, 0.3)' : 'none'
+            }}
+          >
+            <CalendarRange style={{ width: '14px', height: '14px' }} />
+            Select Multi Month
+            {isMultiMonthMode && (
+              <span style={{ fontSize: '0.65rem', background: '#ffffff', color: 'var(--gsh-teal)', padding: '0.1rem 0.4rem', borderRadius: '10px', fontWeight: 900 }}>
+                {selectedMonths.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Backlog Mode Switcher (Visible for Current Month or Multi-Month) */}
+      {(isCurrentMonth || isMultiMonthMode) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -400,7 +499,7 @@ const DisDashboardFyPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              📊 Backlog Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+              📊 Backlog Calculation Mode ({isMultiMonthMode ? 'Multi-Month' : selectedMonth.toUpperCase()}):
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               (Switch between Invoiced Net Sales and Pending Orders)
@@ -481,21 +580,77 @@ const DisDashboardFyPage = () => {
       )}
 
       {/* ─── Interactive Month & Calendar Date Bar ─── */}
-      <MonthCalendarBar
-        selectedMonth={selectedMonth}
-        onSelectMonth={(m) => {
-          setSelectedMonth(m);
-          setStartDate(null);
-          setEndDate(null);
-        }}
-        startDate={startDate}
-        endDate={endDate}
-        onSelectDateRange={(s, e) => {
-          setStartDate(s);
-          setEndDate(e);
-        }}
-        loading={loading}
-      />
+      {isMultiMonthMode ? (
+        /* Multi-Month Interactive Selector Grid */
+        <div className="glass-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <CalendarRange style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Select Months to Aggregate:
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                (Click multiple months to combine sales targets and actual performance)
+              </span>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+              {selectedMonths.length} Month{selectedMonths.length > 1 ? 's' : ''} Selected
+            </div>
+          </div>
+
+          {/* 12-Month Checkable Pill Buttons */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: '0.4rem' }}>
+            {MONTH_TABS.map(tab => {
+              const isSelected = selectedMonths.includes(tab.key);
+              return (
+                <button
+                  key={tab.key}
+                  disabled={loading}
+                  onClick={() => toggleMonthSelection(tab.key)}
+                  style={{
+                    padding: '0.6rem 0.5rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: isSelected ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
+                    background: isSelected ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'var(--bg-card)',
+                    color: isSelected ? '#ffffff' : 'var(--text-main)',
+                    fontWeight: isSelected ? 800 : 700,
+                    fontSize: '0.8rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 3px 10px rgba(0, 168, 150, 0.3)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {isSelected && <Check style={{ width: '13px', height: '13px', strokeWidth: 3 }} />}
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <MonthCalendarBar
+          selectedMonth={selectedMonth}
+          onSelectMonth={(m) => {
+            setSelectedMonth(m);
+            setStartDate(null);
+            setEndDate(null);
+          }}
+          startDate={startDate}
+          endDate={endDate}
+          onSelectDateRange={(s, e) => {
+            setStartDate(s);
+            setEndDate(e);
+          }}
+          loading={loading}
+        />
+      )}
 
       {/* 3-Column Responsive Dashboard Layout */}
       <div style={{ position: 'relative', minHeight: '460px' }}>
@@ -506,7 +661,7 @@ const DisDashboardFyPage = () => {
         {/* CARD 1: Primary Sales Details (Top Left) */}
         <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)' }}>
           <h3 style={{ fontSize: '0.925rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
-            Primary Sales Details ({data?.month_label || 'September 2026'})
+            Primary Sales Details ({data?.month_label || (selectedMonth ? selectedMonth.toUpperCase() + ' 2026' : 'October 2026')})
           </h3>
 
           <div className="gauge-card-content">
@@ -541,7 +696,7 @@ const DisDashboardFyPage = () => {
         {/* CARD 2: RD Sales Details (Top Middle) */}
         <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 14px rgba(0,0,0,0.04)' }}>
           <h3 style={{ fontSize: '0.925rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-main)', margin: '0 0 1rem 0' }}>
-            RD Sales Details ({data?.month_label || 'September 2026'})
+            RD Sales Details ({data?.month_label || (selectedMonth ? selectedMonth.toUpperCase() + ' 2026' : 'October 2026')})
           </h3>
 
           <div className="gauge-card-content">

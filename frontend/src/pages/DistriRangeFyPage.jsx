@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown, Eye, EyeOff, CheckCircle2, Layers, Package } from 'lucide-react';
-import MonthCalendarBar, { getCurrentMonthKey } from '../components/common/MonthCalendarBar';
+import { BarChart2, RefreshCw, Search, ChevronRight, ChevronDown, Eye, EyeOff, CheckCircle2, Layers, Package, Calendar, CalendarRange, Check } from 'lucide-react';
+import MonthCalendarBar, { getCurrentMonthKey, MONTH_TABS } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import api from '../services/api';
@@ -20,6 +20,10 @@ const formatValue = (v, unitMode = 'exact') => {
 
 const DistriRangeFyPage = () => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+  const [isMultiMonthMode, setIsMultiMonthMode] = useState(false);
+  const [selectedMonths, setSelectedMonths] = useState([getCurrentMonthKey()]);
+  const [lastMonth, setLastMonth] = useState(null);
+  const [dataMonthLabel, setDataMonthLabel] = useState(null);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // default 'with' (Sales / Invoices + Reserved)
@@ -37,19 +41,40 @@ const DistriRangeFyPage = () => {
   const [expandedDivisions, setExpandedDivisions] = useState({});
   const [expandedSubgroups, setExpandedSubgroups] = useState({});
 
-  const isCurrentMonth = selectedMonth === getCurrentMonthKey();
-  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const effectiveBacklogMode = (isCurrentMonth || isMultiMonthMode) ? backlogMode : 'without';
+
+  const toggleMonthSelection = (mKey) => {
+    setSelectedMonths(prev => {
+      if (prev.includes(mKey)) {
+        if (prev.length === 1) return prev; // Keep at least one
+        return prev.filter(k => k !== mKey);
+      } else {
+        return [...prev, mKey];
+      }
+    });
+  };
 
   const fetchDistriRangeData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, backlog_mode: effectiveBacklogMode };
-      if (startDate && endDate) {
-        if (startDate === endDate) {
-          params.date = startDate;
+      const params = { backlog_mode: effectiveBacklogMode };
+      if (isMultiMonthMode) {
+        if (selectedMonths.length > 0) {
+          params.months = selectedMonths.join(',');
+          params.month = selectedMonths.join(',');
         } else {
-          params.start_date = startDate;
-          params.end_date = endDate;
+          params.month = getCurrentMonthKey();
+        }
+      } else {
+        params.month = selectedMonth;
+        if (startDate && endDate) {
+          if (startDate === endDate) {
+            params.date = startDate;
+          } else {
+            params.start_date = startDate;
+            params.end_date = endDate;
+          }
         }
       }
       if (selectedContracts.length > 0) {
@@ -60,6 +85,8 @@ const DistriRangeFyPage = () => {
       if (res.data) {
         setTreeData(res.data.tree || []);
         setGrandTotal(res.data.grand_total || null);
+        setLastMonth(res.data.last_month || null);
+        setDataMonthLabel(res.data.month_label || null);
       }
     } catch {
       // Fallback
@@ -69,7 +96,7 @@ const DistriRangeFyPage = () => {
 
   useEffect(() => {
     fetchDistriRangeData();
-  }, [selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
+  }, [isMultiMonthMode, selectedMonths, selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
 
   const toggleDivision = (divName) => {
     setExpandedDivisions(prev => ({
@@ -131,8 +158,80 @@ const DistriRangeFyPage = () => {
         </div>
       </div>
 
-      {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for Current Month) ─── */}
-      {isCurrentMonth && (
+      {/* ─── Period Selection Mode: Single Month vs Select Multi Month ─── */}
+      <div className="glass-card" style={{ padding: '0.65rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
+            Period View:
+          </span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: isMultiMonthMode ? 'var(--gsh-teal)' : 'var(--gsh-red)' }}>
+            {isMultiMonthMode ? `● Multi-Month (${selectedMonths.length} Month${selectedMonths.length > 1 ? 's' : ''} Selected)` : `● Single Month (${selectedMonth.toUpperCase()})`}
+          </span>
+        </div>
+
+        <div style={{ display: 'inline-flex', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '3px', gap: '3px', boxShadow: 'var(--shadow-sm)' }}>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setIsMultiMonthMode(false)}
+            style={{
+              padding: '0.35rem 0.95rem',
+              borderRadius: '6px',
+              border: !isMultiMonthMode ? '1px solid var(--gsh-red)' : 'none',
+              background: !isMultiMonthMode ? 'linear-gradient(135deg, var(--gsh-red), #990012)' : 'transparent',
+              color: !isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              boxShadow: !isMultiMonthMode ? '0 2px 6px rgba(200, 16, 46, 0.25)' : 'none'
+            }}
+          >
+            <Calendar style={{ width: '14px', height: '14px' }} />
+            Single Month (MTD / Day)
+          </button>
+
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              setIsMultiMonthMode(true);
+              if (selectedMonths.length === 0) {
+                setSelectedMonths([selectedMonth]);
+              }
+            }}
+            style={{
+              padding: '0.35rem 0.95rem',
+              borderRadius: '6px',
+              border: isMultiMonthMode ? '1px solid var(--gsh-teal)' : 'none',
+              background: isMultiMonthMode ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'transparent',
+              color: isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              boxShadow: isMultiMonthMode ? '0 2px 8px rgba(0, 168, 150, 0.3)' : 'none'
+            }}
+          >
+            <CalendarRange style={{ width: '14px', height: '14px' }} />
+            Select Multi Month
+            {isMultiMonthMode && (
+              <span style={{ fontSize: '0.65rem', background: '#ffffff', color: 'var(--gsh-teal)', padding: '0.1rem 0.4rem', borderRadius: '10px', fontWeight: 900 }}>
+                {selectedMonths.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── Backlog Calculation Mode Switcher (Visible for Current Month or Multi-Month) ─── */}
+      {(isCurrentMonth || isMultiMonthMode) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -147,7 +246,7 @@ const DistriRangeFyPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
-              Backlog Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+              Backlog Calculation Mode ({isMultiMonthMode ? 'Multi-Month' : selectedMonth.toUpperCase()}):
             </span>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
               {backlogMode === 'with' && '● Invoiced + Reserved Backlog'}
@@ -229,22 +328,78 @@ const DistriRangeFyPage = () => {
         </div>
       )}
 
-      {/* ─── Interactive Month & Calendar Date Bar ─── */}
-      <MonthCalendarBar
-        selectedMonth={selectedMonth}
-        onSelectMonth={(m) => {
-          setSelectedMonth(m);
-          setStartDate(null);
-          setEndDate(null);
-        }}
-        startDate={startDate}
-        endDate={endDate}
-        onSelectDateRange={(s, e) => {
-          setStartDate(s);
-          setEndDate(e);
-        }}
-        loading={loading}
-      />
+      {/* ─── Calendar / Month Selection Section ─── */}
+      {isMultiMonthMode ? (
+        /* Multi-Month Interactive Selector Grid */
+        <div className="glass-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <CalendarRange style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Select Months to Aggregate:
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                (Click multiple months to combine sales targets and actual performance)
+              </span>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+              {selectedMonths.length} Month{selectedMonths.length > 1 ? 's' : ''} Selected
+            </div>
+          </div>
+
+          {/* 12-Month Checkable Pill Buttons */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: '0.4rem' }}>
+            {MONTH_TABS.map(tab => {
+              const isSelected = selectedMonths.includes(tab.key);
+              return (
+                <button
+                  key={tab.key}
+                  disabled={loading}
+                  onClick={() => toggleMonthSelection(tab.key)}
+                  style={{
+                    padding: '0.6rem 0.5rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: isSelected ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
+                    background: isSelected ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'var(--bg-card)',
+                    color: isSelected ? '#ffffff' : 'var(--text-main)',
+                    fontWeight: isSelected ? 800 : 700,
+                    fontSize: '0.8rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 3px 10px rgba(0, 168, 150, 0.3)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {isSelected && <Check style={{ width: '13px', height: '13px', strokeWidth: 3 }} />}
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <MonthCalendarBar
+          selectedMonth={selectedMonth}
+          onSelectMonth={(m) => {
+            setSelectedMonth(m);
+            setStartDate(null);
+            setEndDate(null);
+          }}
+          startDate={startDate}
+          endDate={endDate}
+          onSelectDateRange={(s, e) => {
+            setStartDate(s);
+            setEndDate(e);
+          }}
+          loading={loading}
+        />
+      )}
 
       {/* Search Bar, Expand/Collapse All & Value Display Unit Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -378,19 +533,23 @@ const DistriRangeFyPage = () => {
       </div>
 
       {/* Datatable with Interactive 3-Level Collapsible Tree */}
-      <div className="glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative', minHeight: '440px' }}>
+      <div className="glass-card table-glass-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
         <DataLoaderOverlay loading={loading} title="Crunching Distri-Range Wise Analytics..." />
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', opacity: loading ? 0.35 : 1, transition: 'opacity 0.25s ease' }}>
+        <div className="main-table-scroll-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', opacity: loading ? 0.35 : 1, transition: 'opacity 0.25s ease' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
             <thead style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--bg-card)' }}>
               {/* Grouped Super Header Row */}
               <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: 800, textTransform: 'uppercase' }}>
                 <th colSpan={isDivisionHidden ? 1 : 2} className="sticky-col-super" style={{ padding: '0.65rem 0.5rem', textAlign: 'center' }}>Division</th>
                 <th colSpan="6" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', borderRight: '1px solid var(--border-color)', background: 'rgba(6, 182, 212, 0.08)', color: '#06b6d4' }}>
-                  Division wise Sales Update - Current Month ({selectedMonth.toUpperCase()}) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
+                  {isMultiMonthMode ? (
+                    `Division wise Sales Update - Selected Months (${dataMonthLabel || selectedMonths.map(m => m.slice(0, 3).toUpperCase()).join(', ')})`
+                  ) : (
+                    `Division wise Sales Update - Current Month (${selectedMonth.toUpperCase()})`
+                  )} {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
                 <th colSpan="6" style={{ padding: '0.65rem 0.85rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.08)', color: '#3b82f6' }}>
-                  Division wise Sales Update - Cumulative (YTD) {unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
+                  Division wise Sales Update - Cumulative (YTD) {lastMonth ? `(APR TO ${lastMonth.toUpperCase()}) ` : ''}{unitMode === 'millions' ? '(Mn)' : (unitMode === 'lakhs' ? '(Lakhs)' : '(Rs.)')}
                 </th>
               </tr>
               {/* Sub-Header Row */}

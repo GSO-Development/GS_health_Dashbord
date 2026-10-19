@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Info, Calculator, ShieldCheck, Eye, EyeOff, Layers, Package, FileCheck } from 'lucide-react';
-import MonthCalendarBar from '../components/common/MonthCalendarBar';
+import { RefreshCw, Info, Calculator, ShieldCheck, Eye, EyeOff, Layers, Package, FileCheck, Calendar, CalendarRange, Check, CheckSquare, X, Zap } from 'lucide-react';
+import MonthCalendarBar, { MONTH_TABS } from '../components/common/MonthCalendarBar';
 import DataLoaderOverlay from '../components/common/DataLoaderOverlay';
 import ContractMultiSelect from '../components/common/ContractMultiSelect';
 import { useAuth } from '../context/AuthContext';
@@ -110,6 +110,8 @@ const getCurrentMonthKey = () => {
 const DashboardFyPage = () => {
   const { isAdmin } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+  const [isMultiMonthMode, setIsMultiMonthMode] = useState(false);
+  const [selectedMonths, setSelectedMonths] = useState([getCurrentMonthKey()]);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [backlogMode, setBacklogMode] = useState('with'); // default 'with' (Sales / Invoices + Reserved)
@@ -117,20 +119,44 @@ const DashboardFyPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isCurrentMonth = selectedMonth === getCurrentMonthKey();
-  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const effectiveBacklogMode = (isCurrentMonth || isMultiMonthMode) ? backlogMode : 'without';
+
+  const toggleMonthSelection = (mKey) => {
+    setSelectedMonths(prev => {
+      if (prev.includes(mKey)) {
+        if (prev.length === 1) return prev; // Keep at least one
+        return prev.filter(k => k !== mKey);
+      } else {
+        return [...prev, mKey];
+      }
+    });
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const params = { month: selectedMonth, backlog_mode: effectiveBacklogMode };
-      if (startDate && endDate) {
-        if (startDate === endDate) {
-          params.date = startDate;
+      const params = { backlog_mode: effectiveBacklogMode };
+      
+      if (isMultiMonthMode) {
+        if (selectedMonths.length > 0) {
+          params.months = selectedMonths.join(',');
+          params.month = selectedMonths.join(',');
         } else {
-          params.start_date = startDate;
+          params.month = getCurrentMonthKey();
+        }
+      } else {
+        params.month = selectedMonth;
+        if (startDate && endDate) {
+          if (startDate === endDate) {
+            params.date = startDate;
+          } else {
+            params.start_date = startDate;
+            params.end_date = endDate;
+          }
         }
       }
+
       if (selectedContracts && selectedContracts.length > 0) {
         params.contracts = selectedContracts.join(',');
       }
@@ -147,7 +173,7 @@ const DashboardFyPage = () => {
 
   useEffect(() => {
     loadData();
-  }, [selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
+  }, [isMultiMonthMode, selectedMonths, selectedMonth, startDate, endDate, effectiveBacklogMode, selectedContracts]);
 
   // Data helpers
   const tb = data?.total_budget || { target: 1092090000, actual: 1200681486.76, pct: 110, variance: 108591486.76 };
@@ -166,11 +192,11 @@ const DashboardFyPage = () => {
   return (
     <div className="page-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       
-      {/* ─── Header with Contract Multi-Select & Admin Formula Toggle ─── */}
+      {/* ─── Header with Contract Multi-Select & Title ─── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            Dashboard FY 2026/27 Overview ({data?.month_label || 'Current Month'})
+            Dashboard FY 2026/27 Overview ({data?.month_label || 'Current Period'})
             {loading && (
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
                 <RefreshCw style={{ width: '12px', height: '12px', animation: 'spin 1s linear infinite' }} />
@@ -184,8 +210,8 @@ const DashboardFyPage = () => {
         </div>
       </div>
 
-      {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for the CURRENT Month) ─── */}
-      {isCurrentMonth && (
+      {/* ─── Backlog Calculation Mode Switcher (Visible for CURRENT Month OR Multi-Month Mode) ─── */}
+      {(isCurrentMonth || isMultiMonthMode) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -203,7 +229,7 @@ const DashboardFyPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Layers style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Actuals Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+              Actuals Calculation Mode {isMultiMonthMode ? '(Multi-Month Selection)' : `(${selectedMonth.toUpperCase()} - Current Month)`}:
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               (Choose whether Actual sales figures include pending order backlog)
@@ -280,22 +306,176 @@ const DashboardFyPage = () => {
         </div>
       )}
 
-      {/* ─── Interactive Month & Calendar Date Bar ─── */}
-      <MonthCalendarBar
-        selectedMonth={selectedMonth}
-        onSelectMonth={(m) => {
-          setSelectedMonth(m);
-          setStartDate(null);
-          setEndDate(null);
-        }}
-        startDate={startDate}
-        endDate={endDate}
-        onSelectDateRange={(s, e) => {
-          setStartDate(s);
-          setEndDate(e);
-        }}
-        loading={loading}
-      />
+      {/* ─── Mode Selector Toolbar: Single Month vs Select Multi Month ─── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
+        background: 'var(--bg-card)',
+        padding: '0.5rem 0.75rem',
+        borderRadius: 'var(--radius-xs)',
+        border: '1px solid var(--border-color)',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Period Mode:
+          </span>
+          
+          <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-hover)', padding: '0.2rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <button
+              disabled={loading}
+              onClick={() => setIsMultiMonthMode(false)}
+              style={{
+                padding: '0.35rem 0.85rem',
+                borderRadius: '4px',
+                border: !isMultiMonthMode ? '1px solid var(--gsh-red)' : 'none',
+                background: !isMultiMonthMode ? 'var(--gsh-red)' : 'transparent',
+                color: !isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                transition: 'all 0.15s ease',
+                boxShadow: !isMultiMonthMode ? '0 2px 6px rgba(200, 16, 46, 0.25)' : 'none'
+              }}
+            >
+              <Calendar style={{ width: '14px', height: '14px' }} />
+              Single Month (MTD / Day)
+            </button>
+
+            <button
+              disabled={loading}
+              onClick={() => {
+                setIsMultiMonthMode(true);
+                if (selectedMonths.length === 0) {
+                  setSelectedMonths([selectedMonth]);
+                }
+              }}
+              style={{
+                padding: '0.35rem 0.95rem',
+                borderRadius: '4px',
+                border: isMultiMonthMode ? '1px solid var(--gsh-teal)' : 'none',
+                background: isMultiMonthMode ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'transparent',
+                color: isMultiMonthMode ? '#ffffff' : 'var(--text-main)',
+                fontWeight: 800,
+                fontSize: '0.78rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                transition: 'all 0.15s ease',
+                boxShadow: isMultiMonthMode ? '0 2px 8px rgba(0, 168, 150, 0.3)' : 'none'
+              }}
+            >
+              <CalendarRange style={{ width: '14px', height: '14px' }} />
+              Select Multi Month
+              {isMultiMonthMode && (
+                <span style={{ fontSize: '0.65rem', background: '#ffffff', color: 'var(--gsh-teal)', padding: '0.1rem 0.4rem', borderRadius: '10px', fontWeight: 900 }}>
+                  {selectedMonths.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Calendar / Month Selection Section ─── */}
+      {isMultiMonthMode ? (
+        /* Multi-Month Interactive Selector Grid */
+        <div className="glass-card" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <CalendarRange style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Select Months to Aggregate:
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                (Click multiple months to combine sales targets and actual performance)
+              </span>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--gsh-teal)', background: 'rgba(0,168,150,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+              {selectedMonths.length} Month{selectedMonths.length > 1 ? 's' : ''} Selected
+            </div>
+          </div>
+
+          {/* 12-Month Checkable Pill Buttons */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(85px, 1fr))', gap: '0.4rem' }}>
+            {MONTH_TABS.map(tab => {
+              const isSelected = selectedMonths.includes(tab.key);
+              return (
+                <button
+                  key={tab.key}
+                  disabled={loading}
+                  onClick={() => toggleMonthSelection(tab.key)}
+                  style={{
+                    padding: '0.6rem 0.5rem',
+                    borderRadius: 'var(--radius-xs)',
+                    border: isSelected ? '1.5px solid var(--gsh-teal)' : '1px solid var(--border-color)',
+                    background: isSelected ? 'linear-gradient(135deg, var(--gsh-teal), #007a6c)' : 'var(--bg-card)',
+                    color: isSelected ? '#ffffff' : 'var(--text-main)',
+                    fontWeight: isSelected ? 800 : 700,
+                    fontSize: '0.8rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? '0 3px 10px rgba(0, 168, 150, 0.3)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem'
+                  }}
+                >
+                  {isSelected && <Check style={{ width: '13px', height: '13px', strokeWidth: 3 }} />}
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Summary Badge */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(0,168,150,0.06)',
+            border: '1px solid rgba(0,168,150,0.25)',
+            padding: '0.45rem 0.85rem',
+            borderRadius: 'var(--radius-xs)',
+            fontSize: '0.8rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--gsh-teal)', fontWeight: 800 }}>
+              <Zap style={{ width: '15px', height: '15px' }} />
+              <span>
+                Aggregated Multi-Month: <strong>{data?.month_label || selectedMonths.join(', ')}</strong> ({selectedMonths.length} Month{selectedMonths.length > 1 ? 's' : ''} Combined)
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Single Month & Calendar Day Bar */
+        <MonthCalendarBar
+          selectedMonth={selectedMonth}
+          onSelectMonth={(m) => {
+            setSelectedMonth(m);
+            setStartDate(null);
+            setEndDate(null);
+          }}
+          startDate={startDate}
+          endDate={endDate}
+          onSelectDateRange={(s, e) => {
+            setStartDate(s);
+            setEndDate(e);
+          }}
+          loading={loading}
+        />
+      )}
 
       {/* ─── Cards Container with Smooth Loading Overlay ─── */}
       <div style={{ position: 'relative' }}>

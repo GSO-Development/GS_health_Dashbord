@@ -1,6 +1,9 @@
-from typing import Optional, List, Dict
+import calendar
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query
 from app.core.database import get_db_connection
+from app.routers.dashboard_fy import resolve_date_filter, MONTH_MAPPING
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
@@ -155,9 +158,9 @@ def get_outstanding_output(
 
 
 # 3. Total Range Wise FY Endpoint (Range -> Sales Group -> Product SKUs mapped via division_mappings & invoice_output)
-CALENDAR_MONTH_ORDER = [
-    "january", "february", "march", "april", "may", "june",
-    "july", "august", "september", "october", "november", "december"
+FY_MONTH_ORDER = [
+    "april", "may", "june", "july", "august", "september",
+    "october", "november", "december", "january", "february", "march"
 ]
 
 MONTH_NUM_MAP = {
@@ -174,34 +177,38 @@ def get_total_range_fy(
     end_date: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     backlog_mode: Optional[str] = Query("without"),
-    contracts: Optional[str] = Query(None)
+    contracts: Optional[str] = Query(None),
+    months: Optional[str] = Query(None)
 ):
     b_mode = (backlog_mode.lower().strip() if isinstance(backlog_mode, str) else "without")
     if b_mode not in ["with", "without", "only"]:
         b_mode = "without"
 
-    m_clean = month.lower().strip() if isinstance(month, str) else "july"
-    selected_month = m_clean if m_clean in CALENDAR_MONTH_ORDER else "july"
-    
-    s_date = start_date.strip() if isinstance(start_date, str) and start_date.strip() else None
-    e_date = end_date.strip() if isinstance(end_date, str) and end_date.strip() else None
-    single_d = date.strip() if isinstance(date, str) and date.strip() else None
-    if not s_date and single_d:
-        s_date = single_d
-        e_date = single_d
-    if s_date and not e_date:
-        e_date = s_date
-    elif e_date and not s_date:
-        s_date = e_date
+    df_info = resolve_date_filter(month, date, start_date, end_date, months=months)
+    selected_month = df_info["selected_month"]
+    month_list = df_info.get("month_list", [selected_month])
+    is_multi_month = df_info.get("is_multi_month", False)
+    month_spans = df_info.get("month_spans", [])
+    month_num = df_info["month_num"]
+    year = df_info["year"]
+    days_in_month = df_info["days_in_month"]
+    filter_start = df_info["filter_start"]
+    filter_end = df_info["filter_end"]
+    days_count = df_info["days_count"]
+    has_date_filter = filter_start is not None and not is_multi_month
 
-    has_date_filter = s_date is not None
-    if has_date_filter and s_date > e_date:
-        s_date, e_date = e_date, s_date
-    
-    # Cumulative calculation: From January up to the currently selected month
-    idx = CALENDAR_MONTH_ORDER.index(selected_month)
-    cum_months = CALENDAR_MONTH_ORDER[:idx + 1]
-    cum_m_nums = [MONTH_NUM_MAP[m] for m in cum_months]
+    end_of_month_str = f"{year}-{month_num:02d}-{days_in_month:02d}" if not is_multi_month else month_spans[-1]["end_date"]
+    m_start_date = filter_start if filter_start else (f"{year}-{month_num:02d}-01" if not is_multi_month else month_spans[0]["start_date"])
+    m_end_date = filter_end if filter_end else end_of_month_str
+
+    # Cumulative calculation: From April (FY Start) up to the LAST selected month in FY order
+    last_month = month_list[-1]
+    idx = FY_MONTH_ORDER.index(last_month) if last_month in FY_MONTH_ORDER else 0
+    cum_months = FY_MONTH_ORDER[:idx + 1]
+    last_mnum = MONTH_MAPPING[last_month]
+    last_yr = 2027 if last_mnum in [1, 2, 3] else 2026
+    _, last_dim = calendar.monthrange(last_yr, last_mnum)
+    cum_end_date = f"{last_yr}-{last_mnum:02d}-{last_dim:02d}"
 
     # Handle Contracts Filter
     contract_list = []
@@ -347,47 +354,44 @@ def get_total_range_fy(
                 sg_key = s_grp.strip().lower()
                 sg_b_map[sg_key] = r
 
-        # 7. Bulk fetch invoice actuals (NET_DOM_AMOUNT) from invoice_output table
-        if has_date_filter:
+        # 7. Bulk fetch invoice actuals (NET_DOM_AMOUNT) for Current Month / Date Filter / Multi-Month
+        if is_multi_month:
+            inv_conds = []
+            inv_params = []
+            for span in month_spans:
+                inv_conds.append("(DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s)")
+                inv_params.extend([span["start_date"], span["end_date"]])
+            inv_where = " OR ".join(inv_conds)
             cursor.execute(f"""
                 SELECT 
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MAX(TRIM(i.description)) as product_sku,
                     UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
-                    MONTH(i.invoice_date) as inv_m,
-                    SUM(i.net_dom_amount) as total_act
+                    SUM(i.net_dom_amount) as m_act
                 FROM invoice_output i
-                WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
-                GROUP BY s_grp, part_no, contract_code, inv_m;
-            """, [s_date, e_date] + c_params)
+                WHERE ({inv_where}) {c_clause_i}
+                GROUP BY s_grp, part_no, contract_code;
+            """, inv_params + c_params)
         else:
-            inv_query = f"""
+            cursor.execute(f"""
                 SELECT 
                     COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
                     TRIM(i.catalog_no) as part_no,
                     MAX(TRIM(i.description)) as product_sku,
                     UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
-                    MONTH(i.invoice_date) as inv_m,
-                    SUM(i.net_dom_amount) as total_act
+                    SUM(i.net_dom_amount) as m_act
                 FROM invoice_output i
-                WHERE (
-                    YEAR(i.invoice_date) = 2026 OR YEAR(i.invoice_date) = 2027
-                ) {c_clause_i}
-                GROUP BY s_grp, part_no, contract_code, inv_m;
-            """
-            if c_params:
-                cursor.execute(inv_query, c_params)
-            else:
-                cursor.execute(inv_query)
-
-        sg_inv_map = {}
-        p_inv_map = {}
+                WHERE DATE(i.invoice_date) >= %s AND DATE(i.invoice_date) <= %s {c_clause_i}
+                GROUP BY s_grp, part_no, contract_code;
+            """, [m_start_date, m_end_date] + c_params)
+        
+        sg_inv_m = {}
+        p_inv_m = {}
         for r in cursor.fetchall():
             s_grp = r.get('s_grp')
             part_no = r.get('part_no')
-            inv_m = int(r.get('inv_m') or 0)
-            act_val = float(r.get('total_act') or 0)
+            act_val = float(r.get('m_act') or 0)
             c_code_val = str(r.get('contract_code') or '').strip().lower()
 
             if s_grp:
@@ -414,9 +418,7 @@ def get_total_range_fy(
                     range_to_sg[target_range].add(sg_clean)
                     sg_to_range[sg_key] = target_range
 
-                if inv_m:
-                    sk = (sg_key, inv_m)
-                    sg_inv_map[sk] = sg_inv_map.get(sk, 0.0) + act_val
+                sg_inv_m[sg_key] = sg_inv_m.get(sg_key, 0.0) + act_val
 
                 if part_no:
                     if (sg_key, pk_key) not in seen_sg_prods:
@@ -431,9 +433,134 @@ def get_total_range_fy(
                             'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
                         })
 
-                    if inv_m:
-                        pk = (sg_key, pk_key, inv_m)
-                        p_inv_map[pk] = p_inv_map.get(pk, 0.0) + act_val
+                    pk = (sg_key, pk_key)
+                    p_inv_m[pk] = p_inv_m.get(pk, 0.0) + act_val
+
+        # 7b. Bulk fetch Cumulative invoice actuals (From 2026-04-01 to cum_end_date)
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
+                TRIM(i.catalog_no) as part_no,
+                MAX(TRIM(i.description)) as product_sku,
+                UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
+                SUM(i.net_dom_amount) as c_act
+            FROM invoice_output i
+            WHERE DATE(i.invoice_date) >= '2026-04-01' AND DATE(i.invoice_date) <= %s {c_clause_i}
+            GROUP BY s_grp, part_no, contract_code;
+        """, [cum_end_date] + c_params)
+
+        sg_inv_c = {}
+        p_inv_c = {}
+        for r in cursor.fetchall():
+            s_grp = r.get('s_grp')
+            part_no = r.get('part_no')
+            act_val = float(r.get('c_act') or 0)
+            c_code_val = str(r.get('contract_code') or '').strip().lower()
+
+            if s_grp:
+                sg_clean = s_grp.strip()
+                sg_key = sg_clean.lower()
+                pk_clean = part_no.strip() if part_no else ""
+                pk_key = pk_clean.lower()
+
+                target_range = None
+                if c_code_val and c_code_val in contract_to_range:
+                    target_range = contract_to_range[c_code_val]
+                    sg_clean = contract_to_sg.get(c_code_val, sg_clean)
+                    sg_key = sg_clean.lower()
+                elif sg_key in sg_to_range:
+                    target_range = sg_to_range[sg_key]
+                elif pk_key in part_to_range:
+                    target_range = part_to_range[pk_key][0]
+                    sg_clean = part_to_range[pk_key][1]
+                    sg_key = sg_clean.lower()
+                elif sg_clean in range_to_sg:
+                    target_range = sg_clean
+
+                if target_range and target_range in range_to_sg:
+                    range_to_sg[target_range].add(sg_clean)
+                    sg_to_range[sg_key] = target_range
+
+                sg_inv_c[sg_key] = sg_inv_c.get(sg_key, 0.0) + act_val
+
+                if part_no:
+                    if (sg_key, pk_key) not in seen_sg_prods:
+                        seen_sg_prods.add((sg_key, pk_key))
+                        if sg_key not in sg_products_map:
+                            sg_products_map[sg_key] = []
+                        sg_products_map[sg_key].append({
+                            's_grp': sg_clean,
+                            'part_no': pk_clean,
+                            'product_sku': r.get('product_sku') or pk_clean,
+                            'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                            'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                        })
+
+                    pk = (sg_key, pk_key)
+                    p_inv_c[pk] = p_inv_c.get(pk, 0.0) + act_val
+
+        # 7c. Bulk fetch Annual invoice actuals (Full Financial Year: 2026-04-01 to 2027-03-31)
+        cursor.execute(f"""
+            SELECT 
+                COALESCE(NULLIF(TRIM(i.catalog_group), ''), 'OTHER') as s_grp,
+                TRIM(i.catalog_no) as part_no,
+                MAX(TRIM(i.description)) as product_sku,
+                UPPER(TRIM(COALESCE(i.contract, ''))) as contract_code,
+                SUM(i.net_dom_amount) as a_act
+            FROM invoice_output i
+            WHERE DATE(i.invoice_date) >= '2026-04-01' AND DATE(i.invoice_date) <= '2027-03-31' {c_clause_i}
+            GROUP BY s_grp, part_no, contract_code;
+        """, c_params)
+
+        sg_inv_a = {}
+        p_inv_a = {}
+        for r in cursor.fetchall():
+            s_grp = r.get('s_grp')
+            part_no = r.get('part_no')
+            act_val = float(r.get('a_act') or 0)
+            c_code_val = str(r.get('contract_code') or '').strip().lower()
+
+            if s_grp:
+                sg_clean = s_grp.strip()
+                sg_key = sg_clean.lower()
+                pk_clean = part_no.strip() if part_no else ""
+                pk_key = pk_clean.lower()
+
+                target_range = None
+                if c_code_val and c_code_val in contract_to_range:
+                    target_range = contract_to_range[c_code_val]
+                    sg_clean = contract_to_sg.get(c_code_val, sg_clean)
+                    sg_key = sg_clean.lower()
+                elif sg_key in sg_to_range:
+                    target_range = sg_to_range[sg_key]
+                elif pk_key in part_to_range:
+                    target_range = part_to_range[pk_key][0]
+                    sg_clean = part_to_range[pk_key][1]
+                    sg_key = sg_clean.lower()
+                elif sg_clean in range_to_sg:
+                    target_range = sg_clean
+
+                if target_range and target_range in range_to_sg:
+                    range_to_sg[target_range].add(sg_clean)
+                    sg_to_range[sg_key] = target_range
+
+                sg_inv_a[sg_key] = sg_inv_a.get(sg_key, 0.0) + act_val
+
+                if part_no:
+                    if (sg_key, pk_key) not in seen_sg_prods:
+                        seen_sg_prods.add((sg_key, pk_key))
+                        if sg_key not in sg_products_map:
+                            sg_products_map[sg_key] = []
+                        sg_products_map[sg_key].append({
+                            's_grp': sg_clean,
+                            'part_no': pk_clean,
+                            'product_sku': r.get('product_sku') or pk_clean,
+                            'april': 0, 'may': 0, 'june': 0, 'july': 0, 'august': 0, 'september': 0,
+                            'october': 0, 'november': 0, 'december': 0, 'january': 0, 'february': 0, 'march': 0, 'total': 0
+                        })
+
+                    pk = (sg_key, pk_key)
+                    p_inv_a[pk] = p_inv_a.get(pk, 0.0) + act_val
 
         # 8. Bulk fetch outstanding backlog (Only Reserved Orders)
         if has_date_filter:
@@ -446,9 +573,9 @@ def get_total_range_fy(
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
                 WHERE DATE(o.planned_delivery_date) >= %s AND DATE(o.planned_delivery_date) <= %s
-                  AND UPPER(TRIM(COALESCE(o.line_state, ''))) = 'RESERVED' {c_clause_o}
+                  AND UPPER(TRIM(COALESCE(line_state, ''))) = 'RESERVED' {c_clause_o}
                 GROUP BY s_grp, part_no, contract_code;
-            """, [s_date, e_date] + c_params)
+            """, [m_start_date, m_end_date] + c_params)
         else:
             out_query = f"""
                 SELECT 
@@ -458,7 +585,7 @@ def get_total_range_fy(
                     UPPER(TRIM(COALESCE(o.contract, ''))) as contract_code,
                     SUM(o.backlog_value_base_curr) as total_back
                 FROM outstanding_output o
-                WHERE UPPER(TRIM(COALESCE(o.line_state, ''))) = 'RESERVED' {c_clause_o}
+                WHERE UPPER(TRIM(COALESCE(line_state, ''))) = 'RESERVED' {c_clause_o}
                 GROUP BY s_grp, part_no, contract_code;
             """
             if c_params:
@@ -525,8 +652,6 @@ def get_total_range_fy(
     tot_a_budget = 0.0
     tot_a_actual = 0.0
 
-    sel_m_num = MONTH_NUM_MAP[selected_month]
-
     for index, r_name in enumerate(all_ranges, 1):
         # Build Sub-List of Mapped Sales Groups for this Range
         sg_set = range_to_sg.get(r_name, set())
@@ -536,29 +661,30 @@ def get_total_range_fy(
             sg_k = sg_name.lower()
             sg_b_entry = sg_b_map.get(sg_k, {})
 
-            sg_m_b = float(sg_b_entry.get(selected_month) or 0)
-            sg_inv_m = sg_inv_map.get((sg_k, sel_m_num), 0.0)
+            full_m_b = sum(float(sg_b_entry.get(m) or 0) for m in month_list)
+            sg_m_b = full_m_b
+            sg_inv_m_val = sg_inv_m.get(sg_k, 0.0)
 
             sg_c_b = sum(float(sg_b_entry.get(m) or 0) for m in cum_months)
-            sg_inv_c = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in cum_m_nums)
+            sg_inv_c_val = sg_inv_c.get(sg_k, 0.0)
 
             sg_a_b = float(sg_b_entry.get('total') or 0)
-            sg_inv_a = sum(sg_inv_map.get((sg_k, mn), 0.0) for mn in MONTH_NUM_MAP.values())
+            sg_inv_a_val = sg_inv_a.get(sg_k, 0.0)
 
             sg_back = sg_back_map.get(sg_k, 0.0)
 
             if b_mode == "without":
-                sg_m_a = sg_inv_m
-                sg_c_a = sg_inv_c
-                sg_a_a = sg_inv_a
+                sg_m_a = sg_inv_m_val
+                sg_c_a = sg_inv_c_val
+                sg_a_a = sg_inv_a_val
             elif b_mode == "only":
                 sg_m_a = sg_back
                 sg_c_a = sg_back
                 sg_a_a = sg_back
             else:  # "with"
-                sg_m_a = sg_inv_m + sg_back
-                sg_c_a = sg_inv_c + sg_back
-                sg_a_a = sg_inv_a + sg_back
+                sg_m_a = sg_inv_m_val + sg_back
+                sg_c_a = sg_inv_c_val + sg_back
+                sg_a_a = sg_inv_a_val + sg_back
 
             sg_mb_v = round(sg_m_b, 2)
             sg_ma_v = round(sg_m_a, 2)
@@ -579,29 +705,30 @@ def get_total_range_fy(
                 p_sku = p.get('product_sku') or '-'
                 pk = p_no.lower()
 
-                p_mb = float(p.get(selected_month) or 0)
-                p_inv_m = p_inv_map.get((sg_k, pk, sel_m_num), 0.0)
+                full_p_mb = sum(float(p.get(m) or 0) for m in month_list)
+                p_mb = full_p_mb
+                p_inv_m_val = p_inv_m.get((sg_k, pk), 0.0)
 
                 p_cb = sum(float(p.get(m) or 0) for m in cum_months)
-                p_inv_c = sum(p_inv_map.get((sg_k, pk, mn), 0.0) for mn in cum_m_nums)
+                p_inv_c_val = p_inv_c.get((sg_k, pk), 0.0)
 
                 p_ab = float(p.get('total') or 0)
-                p_inv_a = sum(p_inv_map.get((sg_k, pk, mn), 0.0) for mn in MONTH_NUM_MAP.values())
+                p_inv_a_val = p_inv_a.get((sg_k, pk), 0.0)
 
                 p_back = p_back_map.get((sg_k, pk), 0.0)
 
                 if b_mode == "without":
-                    p_ma = p_inv_m
-                    p_ca = p_inv_c
-                    p_aa = p_inv_a
+                    p_ma = p_inv_m_val
+                    p_ca = p_inv_c_val
+                    p_aa = p_inv_a_val
                 elif b_mode == "only":
                     p_ma = p_back
                     p_ca = p_back
                     p_aa = p_back
                 else:  # "with"
-                    p_ma = p_inv_m + p_back
-                    p_ca = p_inv_c + p_back
-                    p_aa = p_inv_a + p_back
+                    p_ma = p_inv_m_val + p_back
+                    p_ca = p_inv_c_val + p_back
+                    p_aa = p_inv_a_val + p_back
 
                 p_mb_v = round(p_mb, 2)
                 p_ma_v = round(p_ma, 2)
@@ -709,6 +836,11 @@ def get_total_range_fy(
 
     return {
         "selected_month": selected_month,
+        "month_list": month_list,
+        "is_multi_month": is_multi_month,
+        "month_label": df_info.get("label", selected_month.capitalize()),
+        "last_month": last_month,
+        "cum_end_date": cum_end_date,
         "total_ranges": len(data),
         "summary_totals": {
             "m_budget": round(tot_m_budget, 2),

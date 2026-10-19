@@ -1,6 +1,6 @@
 # 🚀 George Steuart Health Dashboard - Complete Server Deployment & Update Guide
 
-මෙම ලේඛනයෙහි **GSH Executive Health Dashboard** පද්ධතිය Production Server (VPS) වෙත මුල සිට Deploy කළ ආකාරය සහ ඉදිරියට සිදුකරන **නව Updates (New Releases / Bug Fixes)** පහසුවෙන් Server එකට යොදන ආකාරය පියවරෙන් පියවර විස්තර කර ඇත.
+This document provides a comprehensive, step-by-step guide on how the **GSH Executive Health Dashboard** was deployed from scratch to the Production Server (VPS), as well as instructions for deploying future **updates, new releases, and bug fixes**.
 
 ---
 
@@ -9,9 +9,9 @@
 | Component | Specification / Configuration |
 |---|---|
 | **Server Host IP** | `172.16.7.10` |
-| **Domain / URL** | `http://gsh-sd.georgesteuart.lk` (Local Network) |
+| **Domain / URL** | `http://gsh-sd.georgesteuart.lk` (Local Corporate Network) |
 | **SSH User** | `tmsadmin` |
-| **Project Directory** | `/var/www/dashboard` |
+| **Project Root Directory** | `/var/www/dashboard` |
 | **Backend Directory** | `/var/www/dashboard/backend` |
 | **Frontend Directory** | `/var/www/dashboard/frontend` |
 | **Backend Service** | `dashboard.service` (Systemd / Uvicorn ASGI on Port 8000) |
@@ -21,64 +21,64 @@
 
 ---
 
-## 🔐 Default System Login Credentials (පෙරනිමි පරිශීලක ගිණුම්)
+## 🔐 Default System Login Credentials
 
 | Account Role | Username | Email | Password | Permissions / Access |
 |---|---|---|---|---|
-| **🛡️ Admin** | `admin` | `admin@gsh.lk` | `Admin@GSH2026!` | සම්පූර්ණ පාලන පහසුකම් (Formula Guides, User Management, Oracle/Axienta Sync, Budget Upload, Mappings) |
+| **🛡️ Admin** | `admin` | `admin@gsh.lk` | `Admin@GSH2026!` | Full Administrative Privileges (Formula Guides, User Management, Oracle/Axienta Sync, Budget Upload, Mappings) |
 | **👤 Standard User** | `user` | `user@gsh.lk` | `User@GSH2026!` | Dashboard Executive Viewer Access (View Charts, Reports, Backlog Filters) |
-| **🏢 Microsoft SSO** | Corporate Email | `name@georgesteuart.lk` | (Office 365 Password) | Microsoft Entra ID (Azure AD) Single Sign-On මගින් login වීම |
+| **🏢 Microsoft SSO** | Corporate Email | `name@georgesteuart.lk` | (Office 365 Password) | Microsoft Entra ID (Azure AD) Single Sign-On Authentication |
 
 ---
 
-## 🛠️ 2. Initial Server Setup & Deployment Steps (මුල් ස්ථාපනය කළ ආකාරය)
+## 🛠️ 2. Initial Server Setup & Deployment Steps
 
-### පියවර 1: Server Prerequisites & System Packages ස්ථාපනය කිරීම
+### Step 1: Install Server Prerequisites & System Packages
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y python3 python3-pip python3-venv nodejs npm nginx mysql-server git libaio1 libaio-dev curl
 ```
 
-### පියවර 2: Oracle Instant Client ස්ථාපනය කිරීම (Oracle DB Integration සඳහා)
-Oracle ERP වෙතින් සජීවී Invoices සහ Backlog Data ලබා ගැනීමට Oracle Client Drivers අවශ්‍ය වේ:
+### Step 2: Install Oracle Instant Client (For Oracle DB Integration)
+Oracle Client drivers are required to connect directly to the Oracle ERP database for live Invoices and Backlog data retrieval:
 ```bash
-# 1. Oracle Instant Client files extract කිරීම
+# 1. Create directory and extract Oracle Instant Client files
 sudo mkdir -p /opt/oracle
 cd /opt/oracle
-# (instantclient-basic-linux.x64-19.x.zip extract කරනු ලැබේ)
+# (Extract instantclient-basic-linux.x64-19.x.zip into /opt/oracle)
 
-# 2. Environment Variables & Library path configure කිරීම
+# 2. Configure Environment Variables & Library path
 echo "/opt/oracle/instantclient_19_24" | sudo tee /etc/ld.so.conf.d/oracle-instantclient.conf
 sudo ldconfig
 
-# Ubuntu 24.04+ සඳහා libaio symlink fix:
+# Symlink fix for libaio on Ubuntu 24.04+:
 sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1 || true
 sudo ldconfig
 ```
 
 ---
 
-### පියවර 3: Project Directory එක සැකසීම සහ Code Clone කිරීම
+### Step 3: Setup Project Directory & Clone Codebase
 ```bash
 sudo mkdir -p /var/www/dashboard
 sudo chown -R $USER:$USER /var/www/dashboard
 
-# Repository එක Clone කිරීම හෝ Files copy කිරීම
+# Clone Repository or Copy Files
 cd /var/www/dashboard
-# (Codebase copied into /var/www/dashboard)
+# (Copy or clone codebase into /var/www/dashboard)
 ```
 
 ---
 
-### පියවර 4: Backend Virtual Environment & Dependencies Setup
+### Step 4: Backend Virtual Environment & Dependencies Setup
 ```bash
 cd /var/www/dashboard/backend
 
-# Virtual environment සෑදීම
+# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Python packages ස්ථාපනය
+# Install Python packages
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -99,8 +99,8 @@ AXIENTA_API_URL=https://api.axienta.lk
 
 ---
 
-### පියවර 5: Systemd Background Service එක Configure කිරීම
-Backend එක background process එකක් ලෙස 24/7 ක්‍රියාත්මක වීමට Systemd Unit එකක් නිර්මාණය කරන ලදී:
+### Step 5: Configure Systemd Background Service
+To keep the FastAPI backend running continuously 24/7 as a managed system service, create a Systemd unit file:
 
 File Location: `/etc/systemd/system/dashboard.service`
 ```ini
@@ -120,7 +120,7 @@ EnvironmentFile=/var/www/dashboard/backend/.env
 WantedBy=multi-user.target
 ```
 
-Service එක Enable සහ Start කිරීම:
+Enable and Start the Service:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable dashboard
@@ -130,20 +130,20 @@ sudo systemctl status dashboard
 
 ---
 
-### පියවර 6: Frontend Build & Nginx Configuration
+### Step 6: Frontend Build & Nginx Configuration
 
 #### Frontend Environment File (`/var/www/dashboard/frontend/.env.production`):
 ```env
 VITE_API_URL=/api
 ```
 
-#### Frontend Bundle එක Build කිරීම:
+#### Build Frontend Production Bundle:
 ```bash
 cd /var/www/dashboard/frontend
 npm install
 npm run build
 ```
-*(Build files `/var/www/dashboard/frontend/dist` තුළ generate වේ)*
+*(The production build assets are output into `/var/www/dashboard/frontend/dist`)*
 
 #### Nginx Site Configuration (`/etc/nginx/sites-available/dashboard`):
 ```nginx
@@ -151,7 +151,7 @@ server {
     listen 80;
     server_name gsh-sd.georgesteuart.lk 172.16.7.10;
 
-    # Frontend Static Single Page App (SPA)
+    # Frontend Static Single Page Application (SPA)
     root /var/www/dashboard/frontend/dist;
     index index.html;
 
@@ -175,7 +175,7 @@ server {
 }
 ```
 
-Site එක Activate කර Nginx Restart කිරීම:
+Enable Site and Restart Nginx:
 ```bash
 sudo ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -185,72 +185,72 @@ sudo systemctl restart nginx
 
 ---
 
-## 🔄 3. How to Deploy New Updates to Server (අලුත් Update එකක් Server එකට දමන ආකාරය)
+## 🔄 3. How to Deploy New Updates to the Server
 
-ඔබ Local Computer එකේ Code වෙනස්කම් කර පසුව ඒවා Server එකට Deploy කිරීමට පහත පියවර අනුගමනය කරන්න.
+Whenever you modify code locally and need to deploy changes to the live production server, follow one of the two methods below.
 
-### ක්‍රමය 1: Manual Step-by-Step Deployment
+### Method 1: Manual Step-by-Step Deployment
 
-#### පියවර A: Local PC එකෙන් Server එකට SSH මගින් සම්බන්ධ වන්න
+#### Step A: Connect to Server via SSH
 ```bash
 ssh tmsadmin@172.16.7.10
-# Password: (Enter server password)
+# Enter password when prompted
 ```
 
-#### පියවර B: නවතම Code Updates ලබා ගැනීම (Pull Latest Code)
+#### Step B: Pull Latest Code Changes
 ```bash
 cd /var/www/dashboard
 git pull origin main
 ```
-*(Git භාවිතා නොකරන්නේ නම්, SFTP/SCP මගින් වෙනස් කළ files `/var/www/dashboard/` වෙත upload කරන්න)*
+*(If Git is not configured, copy the updated files to `/var/www/dashboard/` via SFTP/SCP)*
 
-#### පියවර C: Backend එක Update කර Restart කිරීම
+#### Step C: Update Backend and Restart Service
 ```bash
 cd /var/www/dashboard/backend
 source .venv/bin/activate
 
-# නව Python packages ඇත්නම් install කරගැනීම
+# Install any newly added Python packages
 pip install -r requirements.txt
 
-# Backend service එක restart කිරීම
+# Restart the FastAPI backend service
 sudo systemctl restart dashboard
 ```
 
-#### පියවර D: Frontend එක Rebuild කර Nginx Reload කිරීම
+#### Step D: Rebuild Frontend and Reload Nginx
 ```bash
 cd /var/www/dashboard/frontend
 
-# නව NPM packages ඇත්නම් install කරගැනීම
+# Install any newly added NPM packages
 npm install
 
-# Production build එක සෑදීම
+# Rebuild the production bundle
 npm run build
 
-# Nginx web server reload කිරීම
+# Reload the Nginx web server
 sudo systemctl reload nginx
 ```
 
-#### පියවර E: Update එක සාර්ථකදැයි Health Check කිරීම
+#### Step E: Verify Deployment Health
 ```bash
-# Backend Health Endpoint එක පරීක්ෂා කිරීම
+# Check Backend Health Endpoint
 curl -s http://127.0.0.1:8000/api/health
 
-# Dashboard service status බැලීම
+# Check Dashboard system service status
 sudo systemctl status dashboard --no-pager
 ```
 
 ---
 
-### ක්‍රමය 2: Automated 1-Click Update Script (ඉතා පහසු ක්‍රමය)
+### Method 2: Automated 1-Click Update Script (Recommended)
 
-Server එක තුළ Update එක එකම command එකකින් run කිරීමට `deploy.sh` script එකක් සකස් කර ඇත.
+To deploy updates in one single command, an automated deployment script `deploy.sh` is configured on the server.
 
-#### Server එක තුළ `deploy.sh` script එක සාදාගන්න:
+#### Create `deploy.sh` on the Server:
 ```bash
 sudo nano /var/www/dashboard/deploy.sh
 ```
 
-පහත code එක paste කරන්න:
+Paste the following script content:
 ```bash
 #!/bin/bash
 set -e
@@ -291,12 +291,13 @@ echo "🌐 Dashboard URL: http://gsh-sd.georgesteuart.lk"
 echo "=========================================="
 ```
 
-Script එකට Execute Permission දෙන්න:
+Grant Execute Permissions to the Script:
 ```bash
 sudo chmod +x /var/www/dashboard/deploy.sh
 ```
 
-#### ඉදිරියට Update එකක් දැමීමට අවශ්‍ය වූ විට run කළ යුතු එකම Command එක:
+#### Deploying Any Future Update:
+Run this single command whenever you want to update the server:
 ```bash
 sudo /var/www/dashboard/deploy.sh
 ```
@@ -307,9 +308,11 @@ sudo /var/www/dashboard/deploy.sh
 
 | Action | Command |
 |---|---|
-| **Backend Logs Live බැලීම** | `sudo journalctl -u dashboard -f` |
-| **Nginx Error Logs බැලීම** | `sudo tail -f /var/log/nginx/error.log` |
-| **Backend Service Restart කිරීම** | `sudo systemctl restart dashboard` |
-| **Nginx Reload කිරීම** | `sudo systemctl reload nginx` |
-| **MySQL Status බැලීම** | `sudo systemctl status mysql` |
-| **Port 8000 Listen වෙනවාද බැලීම** | `sudo netstat -tulpn \| grep 8000` |
+| **View Live Backend Logs** | `sudo journalctl -u dashboard -f` |
+| **View Nginx Error Logs** | `sudo tail -f /var/log/nginx/error.log` |
+| **Restart Backend Service** | `sudo systemctl restart dashboard` |
+| **Reload Nginx Server** | `sudo systemctl reload nginx` |
+| **Check MySQL Service Status** | `sudo systemctl status mysql` |
+| **Check Port 8000 Activity** | `sudo netstat -tulpn \| grep 8000` |
+| **Check Oracle Driver Configuration** | `ldconfig -p \| grep libclntsh` |
+| **Test Backend Health Endpoint** | `curl -s http://127.0.0.1:8000/api/health` |

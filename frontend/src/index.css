@@ -608,3 +608,64 @@ body {
   min-width: 120px !important;
   max-width: 180px !important;
 }
+
+/* ==========================================================================
+   RESPONSIVE TABLE CONTAINER & MOBILE LANDSCAPE FIXES
+   ========================================================================== */
+.table-glass-card {
+  min-height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.main-table-scroll-wrapper {
+  max-height: calc(100vh - 220px);
+  min-height: 250px;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Low viewport height / Mobile Landscape mode (<= 600px height) */
+@media (max-height: 600px) {
+  .header-container {
+    height: 50px !important;
+    padding: 0 1rem !important;
+  }
+  .page-body {
+    padding: 0.5rem 0.75rem !important;
+  }
+  .main-brand-banner {
+    padding: 0.5rem 0.75rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  .main-table-scroll-wrapper {
+    max-height: calc(100vh - 120px) !important;
+    min-height: 180px !important;
+  }
+  table th, table td {
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+}
+
+/* Extra small landscape height (<= 450px height e.g. iPhone SE landscape: 375px) */
+@media (max-height: 450px) {
+  .header-container {
+    height: 44px !important;
+  }
+  .page-body {
+    padding: 0.35rem 0.5rem !important;
+  }
+  .main-brand-banner {
+    display: none !important; /* Save precious vertical real estate */
+  }
+  .main-table-scroll-wrapper {
+    max-height: calc(100vh - 85px) !important;
+    min-height: 160px !important;
+  }
+  .table-glass-card {
+    margin-bottom: 0.5rem !important;
+  }
+}
+
