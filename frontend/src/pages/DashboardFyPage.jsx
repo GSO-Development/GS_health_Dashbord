@@ -119,7 +119,9 @@ const DashboardFyPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const curMonthKey = getCurrentMonthKey();
+  const isCurrentMonth = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
+    (isMultiMonthMode && selectedMonths.length === 1 && selectedMonths[0] === curMonthKey);
   const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
@@ -229,7 +231,7 @@ const DashboardFyPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Layers style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Actuals Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
+              Actuals Calculation Mode ({curMonthKey.toUpperCase()} - Current Month):
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               (Choose whether Actual sales figures include pending order backlog)

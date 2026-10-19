@@ -52,7 +52,9 @@ const TotalRangeFyPage = () => {
     setTimeout(() => setToast(null), 3500);
   };
 
-  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const curMonthKey = getCurrentMonthKey();
+  const isCurrentMonth = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
+    (isMultiMonthMode && selectedMonths.length === 1 && selectedMonths[0] === curMonthKey);
   const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
@@ -278,7 +280,7 @@ const TotalRangeFyPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
-              Backlog Calculation Mode ({selectedMonth.toUpperCase()}):
+              Backlog Calculation Mode ({curMonthKey.toUpperCase()}):
             </span>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
               {backlogMode === 'with' && '● Invoiced + Reserved Backlog'}

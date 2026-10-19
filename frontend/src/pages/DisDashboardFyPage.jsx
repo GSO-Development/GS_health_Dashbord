@@ -326,7 +326,9 @@ const DisDashboardFyPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
+  const curMonthKey = getCurrentMonthKey();
+  const isCurrentMonth = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
+    (isMultiMonthMode && selectedMonths.length === 1 && selectedMonths[0] === curMonthKey);
   const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
@@ -499,7 +501,7 @@ const DisDashboardFyPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              📊 Backlog Calculation Mode ({selectedMonth.toUpperCase()}):
+              📊 Backlog Calculation Mode ({curMonthKey.toUpperCase()}):
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               (Switch between Invoiced Net Sales and Pending Orders)
