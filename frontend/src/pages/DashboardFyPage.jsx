@@ -120,7 +120,7 @@ const DashboardFyPage = () => {
   const [loading, setLoading] = useState(true);
 
   const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
-  const effectiveBacklogMode = (isCurrentMonth || isMultiMonthMode) ? backlogMode : 'without';
+  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
     setSelectedMonths(prev => {
@@ -210,8 +210,8 @@ const DashboardFyPage = () => {
         </div>
       </div>
 
-      {/* ─── Backlog Calculation Mode Switcher (Visible for CURRENT Month OR Multi-Month Mode) ─── */}
-      {(isCurrentMonth || isMultiMonthMode) && (
+      {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for Current Month, hidden in Multi-Month Mode) ─── */}
+      {isCurrentMonth && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -229,7 +229,7 @@ const DashboardFyPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Layers style={{ width: '18px', height: '18px', color: 'var(--gsh-teal)' }} />
             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              Actuals Calculation Mode {isMultiMonthMode ? '(Multi-Month Selection)' : `(${selectedMonth.toUpperCase()} - Current Month)`}:
+              Actuals Calculation Mode ({selectedMonth.toUpperCase()} - Current Month):
             </span>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               (Choose whether Actual sales figures include pending order backlog)

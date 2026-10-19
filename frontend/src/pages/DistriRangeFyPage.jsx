@@ -42,7 +42,7 @@ const DistriRangeFyPage = () => {
   const [expandedSubgroups, setExpandedSubgroups] = useState({});
 
   const isCurrentMonth = !isMultiMonthMode && selectedMonth === getCurrentMonthKey();
-  const effectiveBacklogMode = (isCurrentMonth || isMultiMonthMode) ? backlogMode : 'without';
+  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
     setSelectedMonths(prev => {
@@ -230,8 +230,8 @@ const DistriRangeFyPage = () => {
         </div>
       </div>
 
-      {/* ─── Backlog Calculation Mode Switcher (Visible for Current Month or Multi-Month) ─── */}
-      {(isCurrentMonth || isMultiMonthMode) && (
+      {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for Current Month, hidden in Multi-Month Mode) ─── */}
+      {isCurrentMonth && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -246,7 +246,7 @@ const DistriRangeFyPage = () => {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
-              Backlog Calculation Mode ({isMultiMonthMode ? 'Multi-Month' : selectedMonth.toUpperCase()}):
+              Backlog Calculation Mode ({selectedMonth.toUpperCase()}):
             </span>
             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: backlogMode === 'without' ? '#6366f1' : (backlogMode === 'with' ? '#10b981' : '#f59e0b') }}>
               {backlogMode === 'with' && '● Invoiced + Reserved Backlog'}
