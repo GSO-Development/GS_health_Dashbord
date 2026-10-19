@@ -120,9 +120,11 @@ const DashboardFyPage = () => {
   const [loading, setLoading] = useState(true);
 
   const curMonthKey = getCurrentMonthKey();
-  const isCurrentMonth = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
+  const isCurrentMonthOnly = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
     (isMultiMonthMode && selectedMonths.length === 1 && selectedMonths[0] === curMonthKey);
-  const effectiveBacklogMode = isCurrentMonth ? backlogMode : 'without';
+  const hasCurrentMonth = (!isMultiMonthMode && selectedMonth === curMonthKey) ||
+    (isMultiMonthMode && selectedMonths.includes(curMonthKey));
+  const effectiveBacklogMode = hasCurrentMonth ? backlogMode : 'without';
 
   const toggleMonthSelection = (mKey) => {
     setSelectedMonths(prev => {
@@ -213,7 +215,7 @@ const DashboardFyPage = () => {
       </div>
 
       {/* ─── Backlog Calculation Mode Switcher (Visible ONLY for Current Month, hidden in Multi-Month Mode) ─── */}
-      {isCurrentMonth && (
+      {isCurrentMonthOnly && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
